@@ -87,6 +87,16 @@ impl Drafts {
     pub fn is_contain(&self, v: CellValue) -> bool {
         self.drafts[v.to_index().unwrap()]
     }
+
+    pub fn to_vec(&self) -> Vec<CellValue> {
+        let mut ret = vec![];
+        for i in 0..9 {
+            if self.drafts[i] {
+                ret.push(CellValue::from_value((i + 1) as u32).unwrap());
+            }
+        }
+        ret
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -145,7 +155,7 @@ impl CellValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cell {
     rc: RCCoords,
     gn: GNCoords,
@@ -154,6 +164,7 @@ pub struct Cell {
     value: CellValue,
 }
 
+#[derive(Clone)]
 pub struct Field {
     cells: [Cell; 81],
 }
@@ -162,10 +173,10 @@ pub struct Field {
 pub enum Situation {
     SetValue,
     RemoveDrafts,
-    Condition1,
-    Condition2,
-    Condition3,
-    Condition4,
+    OnlyOneLeft,
+    OnlyOneRightInRow,
+    OnlyOneRightInCol,
+    OnlyOneInGrid,
 }
 
 pub struct Operator<'a> {
@@ -397,6 +408,16 @@ impl Field {
                         } else {
                             line += "/ \\";
                         }
+                    } else if p.status == CellStatus::SOLVE {
+                        if m == 0 {
+                            line += "***";
+                        } else if m == 1 {
+                            line += "*";
+                            line += &((p.value as u32).to_string());
+                            line += "*";
+                        } else {
+                            line += "***";
+                        }
                     }
                     if c % 3 == 2 {
                         line += "║";
@@ -435,7 +456,7 @@ impl Field {
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: None,
+                            value: Some(set_value_operator.cell.value),
                             drafts: Some(d),
                         })
                     }
@@ -456,7 +477,7 @@ impl Field {
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: None,
+                            value: Some(set_value_operator.cell.value),
                             drafts: Some(d),
                         })
                     }
@@ -477,13 +498,15 @@ impl Field {
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: None,
+                            value: Some(set_value_operator.cell.value),
                             drafts: Some(d),
                         })
                     }
                 }
             }
         }
+
+        ret.push(set_value_operator);
 
         ret
     }
@@ -503,7 +526,7 @@ impl Field {
                 }
                 // 如果是，则满足“唯余法”的条件
                 ret.condition.push(Operator {
-                    situation: Situation::Condition1,
+                    situation: Situation::OnlyOneLeft,
                     cell: p,
                     value: None,
                     drafts: Some(p.drafts),
@@ -527,17 +550,131 @@ impl Field {
         }
     }
 
-    // 排除法
+    // 排除法，对于每个格子内的草稿值，按照每行、每列、每宫方向进行判断，如果唯一，则填写该值，同时去除其余同一行列宫的草稿值
     pub fn inference_only_one_right(&self) -> Option<Inference> {
+        let mut ret = Inference {
+            condition: vec![],
+            conclusion: vec![],
+        };
         for r in 0..9 {
-            let mut d = Drafts { drafts: [true; 9] };
             for c in 0..9 {
                 let p = self.get_cell_ref_by_rc(RCCoords { r: r, c: c });
-                if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
-                    d.remove_draft(p.value);
+                if p.status == CellStatus::DRAFT {
+                    for (_, d) in p.drafts.to_vec().iter().enumerate() {
+                        // 按列检索
+                        {
+                            let mut flag = true;
+                            for r_iter in 0..9 {
+                                if r_iter == r {
+                                    continue;
+                                }
+                                let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
+                                if p_iter.status == CellStatus::DRAFT {
+                                    if p_iter.drafts.is_contain(*d) {
+                                        flag = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if flag {
+                                // 该草稿唯一
+                                ret.condition.push(Operator {
+                                    situation: Situation::OnlyOneRightInCol,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                });
+                                // 同时，该格子需要填写该数字
+                                let sv_op = Operator {
+                                    situation: Situation::SetValue,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                };
+                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
+                                ret.conclusion
+                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
+                                return Some(ret);
+                            }
+                        }
+                        // 按行检索
+                        {
+                            let mut flag = true;
+                            for c_iter in 0..9 {
+                                if c_iter == c {
+                                    continue;
+                                }
+                                let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r, c: c_iter });
+                                if p_iter.status == CellStatus::DRAFT {
+                                    if p_iter.drafts.is_contain(*d) {
+                                        flag = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if flag {
+                                // 该草稿唯一
+                                ret.condition.push(Operator {
+                                    situation: Situation::OnlyOneRightInCol,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                });
+                                // 同时，该格子需要填写该数字
+                                let sv_op = Operator {
+                                    situation: Situation::SetValue,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                };
+                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
+                                ret.conclusion
+                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
+                                return Some(ret);
+                            }
+                        }
+                        // 按宫检索
+                        {
+                            let mut flag = true;
+                            for n_iter in 0..9 {
+                                if n_iter == p.gn.n {
+                                    continue;
+                                }
+                                let p_iter = self.get_cell_ref_by_gn(GNCoords {
+                                    g: p.gn.g,
+                                    n: n_iter,
+                                });
+                                if p_iter.status == CellStatus::DRAFT {
+                                    if p_iter.drafts.is_contain(*d) {
+                                        flag = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if flag {
+                                // 该草稿唯一
+                                ret.condition.push(Operator {
+                                    situation: Situation::OnlyOneRightInCol,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                });
+                                // 同时，该格子需要填写该数字
+                                let sv_op = Operator {
+                                    situation: Situation::SetValue,
+                                    cell: p,
+                                    value: Some(*d),
+                                    drafts: None,
+                                };
+                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
+                                ret.conclusion
+                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
+                                return Some(ret);
+                            }
+                        }
+                    }
                 }
             }
-            for (index, item) in d.drafts.iter().enumerate() {}
         }
         None
     }
@@ -567,10 +704,26 @@ impl Field {
                 println!("fn_inference None");
                 continue;
             }
-            println!("fn_inference Some, {}", opt.as_ref().unwrap());
+            println!("fn_inference Some: {}", opt.as_ref().unwrap());
             return opt;
         }
         None
+    }
+
+    // 应用一个操作，为了实现“历史记录“功能，返回值是一个新的Field
+    pub fn apply_one_inference(&self, inference: Inference) -> Field {
+        let mut ret: Field = self.clone();
+        for op in inference.conclusion {
+            if op.situation == Situation::SetValue {
+                ret.get_cell_mut_by_rc(op.cell.rc).value = op.value.unwrap();
+                ret.get_cell_mut_by_rc(op.cell.rc).status = CellStatus::SOLVE;
+            } else if op.situation == Situation::RemoveDrafts {
+                ret.get_cell_mut_by_rc(op.cell.rc)
+                    .drafts
+                    .remove_draft(op.value.unwrap());
+            }
+        }
+        ret
     }
 }
 
@@ -580,7 +733,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let field = Field::initial_by_string(
+        let mut field = Field::initial_by_string(
             &"070009800008002006906100000600000150030801020092000008000003701800600300001900060"
                 .to_string(),
         )
@@ -588,6 +741,8 @@ mod tests {
         field.print();
         println!("{:?}", field.find_conflict());
         println!("{:?}", field.find_empty_drafts());
-        field.search_one_inference();
+        let inteference = field.search_one_inference();
+        field = field.apply_one_inference(inteference.unwrap());
+        field.print();
     }
 }
