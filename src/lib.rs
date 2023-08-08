@@ -442,6 +442,7 @@ impl Field {
         set_value_operator: Operator<'a>,
     ) -> Vec<Operator<'a>> {
         let mut ret: Vec<Operator> = vec![];
+        let v = set_value_operator.cell.value;
 
         for r_iter in 0..9 {
             if r_iter != set_value_operator.cell.rc.r {
@@ -450,14 +451,14 @@ impl Field {
                     c: set_value_operator.cell.rc.c,
                 });
                 if p.status == CellStatus::DRAFT {
-                    if p.drafts.is_contain(set_value_operator.value.unwrap()) {
-                        let mut d = Drafts { drafts: [false; 9] };
-                        d.remove_draft(set_value_operator.value.unwrap());
+                    if p.drafts.is_contain(v) {
+                        // let mut d = Drafts { drafts: [false; 9] };
+                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: Some(set_value_operator.cell.value),
-                            drafts: Some(d),
+                            value: Some(v),
+                            drafts: None,
                         })
                     }
                 }
@@ -471,14 +472,14 @@ impl Field {
                     c: c_iter,
                 });
                 if p.status == CellStatus::DRAFT {
-                    if p.drafts.is_contain(set_value_operator.value.unwrap()) {
-                        let mut d = Drafts { drafts: [false; 9] };
-                        d.remove_draft(set_value_operator.value.unwrap());
+                    if p.drafts.is_contain(v) {
+                        // let mut d = Drafts { drafts: [false; 9] };
+                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: Some(set_value_operator.cell.value),
-                            drafts: Some(d),
+                            value: Some(set_value_operator.cell.value.clone()),
+                            drafts: None,
                         })
                     }
                 }
@@ -492,14 +493,14 @@ impl Field {
                     n: n_iter,
                 });
                 if p.status == CellStatus::DRAFT {
-                    if p.drafts.is_contain(set_value_operator.value.unwrap()) {
-                        let mut d = Drafts { drafts: [false; 9] };
-                        d.remove_draft(set_value_operator.value.unwrap());
+                    if p.drafts.is_contain(v) {
+                        // let mut d = Drafts { drafts: [false; 9] };
+                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: Some(set_value_operator.cell.value),
-                            drafts: Some(d),
+                            value: Some(set_value_operator.cell.value.clone()),
+                            drafts: None,
                         })
                     }
                 }
