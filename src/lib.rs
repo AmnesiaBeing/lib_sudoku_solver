@@ -442,7 +442,7 @@ impl Field {
         set_value_operator: Operator<'a>,
     ) -> Vec<Operator<'a>> {
         let mut ret: Vec<Operator> = vec![];
-        let v = set_value_operator.cell.value;
+        let v = set_value_operator.value.unwrap();
 
         for r_iter in 0..9 {
             if r_iter != set_value_operator.cell.rc.r {
@@ -478,7 +478,7 @@ impl Field {
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: Some(set_value_operator.cell.value.clone()),
+                            value: Some(v),
                             drafts: None,
                         })
                     }
@@ -499,7 +499,7 @@ impl Field {
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
-                            value: Some(set_value_operator.cell.value.clone()),
+                            value: Some(v),
                             drafts: None,
                         })
                     }
@@ -740,10 +740,13 @@ mod tests {
         )
         .unwrap();
         field.print();
-        println!("{:?}", field.find_conflict());
-        println!("{:?}", field.find_empty_drafts());
-        let inteference = field.search_one_inference();
-        field = field.apply_one_inference(inteference.unwrap());
+        // println!("{:?}", field.find_conflict());
+        // println!("{:?}", field.find_empty_drafts());
+
+        for _ in 0..40 {
+            let inteference = field.search_one_inference();
+            field = field.apply_one_inference(inteference.unwrap());
+        }
         field.print();
     }
 }
