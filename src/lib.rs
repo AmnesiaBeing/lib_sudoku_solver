@@ -57,19 +57,18 @@ impl Drafts {
     }
 
     pub fn try_get_the_only_one(&self) -> Option<CellValue> {
-        let mut cnt = 0;
+        let mut flag = false;
         let mut ret = 0;
         for i in 0..9 {
             if self.drafts[i] {
-                cnt += 1;
+                if flag {
+                    return None;
+                }
                 ret = i;
+                flag = true;
             }
         }
-        if cnt == 1 {
-            return Some(CellValue::from_value(ret as u32).unwrap());
-        } else {
-            return None;
-        }
+        return Some(CellValue::from_value((ret + 1) as u32).unwrap());
     }
 
     pub fn add_draft(&mut self, v: CellValue) {
@@ -208,18 +207,30 @@ impl fmt::Display for Inference<'_> {
     /// =推导
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.condition.len() != 0 {
-            write!(f, "^");
+            write!(f, "因为 ")?;
             for (index, c) in self.condition.iter().enumerate() {
-                write!(f, "R{}C{}", c.cell.rc.r, c.cell.rc.c)?;
+                write!(
+                    f,
+                    "R{}C{}V{}",
+                    c.cell.rc.r,
+                    c.cell.rc.c,
+                    (c.value.unwrap().to_index().unwrap() + 1)
+                )?;
                 if index < self.condition.len() {
                     write!(f, "&")?;
                 }
             }
         }
         if self.conclusion.len() != 0 {
-            write!(f, "=")?;
+            write!(f, "，推理出：")?;
             for (index, c) in self.conclusion.iter().enumerate() {
-                write!(f, "R{}C{}", c.cell.rc.r, c.cell.rc.c)?;
+                write!(
+                    f,
+                    "-R{}C{}V{}",
+                    c.cell.rc.r,
+                    c.cell.rc.c,
+                    (c.value.unwrap().to_index().unwrap() + 1)
+                )?;
                 if index < self.conclusion.len() {
                     write!(f, "&")?;
                 }
@@ -529,8 +540,8 @@ impl Field {
                 ret.condition.push(Operator {
                     situation: Situation::OnlyOneLeft,
                     cell: p,
-                    value: None,
-                    drafts: Some(p.drafts),
+                    value: Some(opt.unwrap()),
+                    drafts: None,
                 });
                 // 同时，该格子需要填写该数字
                 let sv_op = Operator {
@@ -702,10 +713,10 @@ impl Field {
         for fn_inference in inferences {
             let opt = fn_inference(&self);
             if opt.is_none() {
-                println!("fn_inference None");
+                // println!("fn_inference None");
                 continue;
             }
-            println!("fn_inference Some: {}", opt.as_ref().unwrap());
+            println!("{}", opt.as_ref().unwrap());
             return opt;
         }
         None
@@ -746,7 +757,7 @@ mod tests {
         for _ in 0..40 {
             let inteference = field.search_one_inference();
             field = field.apply_one_inference(inteference.unwrap());
+            field.print();
         }
-        field.print();
     }
 }
