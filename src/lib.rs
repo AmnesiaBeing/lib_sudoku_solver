@@ -284,6 +284,15 @@ impl Field {
         }
     }
 
+    pub fn check_if_finish(&self) -> bool {
+        for p in &self.cells {
+            if p.status == CellStatus::DRAFT {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // 如果一个格子中没有任何候选数，说明中间过程出错了
     pub fn find_empty_drafts(&self) -> Option<Vec<&Cell>> {
         let mut ret: Vec<&Cell> = vec![];
@@ -754,10 +763,14 @@ mod tests {
         // println!("{:?}", field.find_conflict());
         // println!("{:?}", field.find_empty_drafts());
 
-        for _ in 0..40 {
+        loop {
             let inteference = field.search_one_inference();
             field = field.apply_one_inference(inteference.unwrap());
-            field.print();
+            if field.check_if_finish() {
+                field.print();
+                println!("Finish!");
+                break;
+            }
         }
     }
 }
