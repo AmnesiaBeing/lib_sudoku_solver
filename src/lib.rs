@@ -138,6 +138,7 @@ impl CellValue {
             _ => Err("Invalid Cell Value."),
         }
     }
+
     pub fn to_index(&self) -> Result<usize, &'static str> {
         match *self {
             CellValue::V1 => Ok(0),
@@ -151,6 +152,20 @@ impl CellValue {
             CellValue::V9 => Ok(8),
             CellValue::INVAILD => Err("Invalid Cell Value."),
         }
+    }
+
+    pub fn vec_for_iter() -> Vec<CellValue> {
+        vec![
+            CellValue::V1,
+            CellValue::V2,
+            CellValue::V3,
+            CellValue::V4,
+            CellValue::V5,
+            CellValue::V6,
+            CellValue::V7,
+            CellValue::V8,
+            CellValue::V9,
+        ]
     }
 }
 
@@ -700,8 +715,293 @@ impl Field {
         None
     }
 
-    // 高级排除法
-    // pub fn inference_only_one_right_ex(&self) -> Option<Inference> {}
+    // 高级排除法1
+    // 当一宫内的某种草稿值当且仅当在同一行/列时（其他行列不能有），可以排除行/列内其余格子的该草稿值
+    pub fn inference_only_one_right_ex1(&self) -> Option<Inference> {
+        let mut ret = Inference {
+            condition: vec![],
+            conclusion: vec![],
+        };
+        for g_iter in 0..9 {
+            'v_iter: for v_iter in CellValue::vec_for_iter() {
+                let mut same_p_set: Vec<&Cell> = vec![];
+                'n_iter: for n_iter in 0..9 {
+                    let p = self.get_cell_ref_by_gn(GNCoords {
+                        g: g_iter,
+                        n: n_iter,
+                    });
+                    if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
+                        if p.value == v_iter {
+                            continue 'v_iter;
+                        }
+                        continue 'n_iter;
+                    } else if p.status == CellStatus::DRAFT {
+                        if p.drafts.is_contain(v_iter) {
+                            same_p_set.push(p);
+                        }
+                    }
+                }
+                if same_p_set.len() < 2 {
+                    continue 'v_iter;
+                } else {
+                    // 判断是否在同一行
+                    {
+                        let tmp_r = same_p_set[0].rc.r;
+                        let mut flag = true;
+                        for i in 1..same_p_set.len() {
+                            if same_p_set[i].rc.r != tmp_r {
+                                flag = false;
+                                break;
+                            }
+                        }
+                        if flag {
+                            // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
+                            // 寻找相同行的值是否存在该草稿数，需要排除相同宫的值
+                            let mut tmp_ret: Vec<&Cell> = vec![];
+                            for c_iter in 0..9 {
+                                let p_iter = self.get_cell_ref_by_rc(RCCoords {
+                                    r: tmp_r,
+                                    c: c_iter,
+                                });
+                                if p_iter.gn.g != g_iter
+                                    && p_iter.status == CellStatus::DRAFT
+                                    && p_iter.drafts.is_contain(v_iter)
+                                {
+                                    tmp_ret.push(p_iter);
+                                }
+                            }
+                            if tmp_ret.len() != 0 {
+                                for item in same_p_set.iter() {
+                                    ret.condition.push(Operator {
+                                        situation: Situation::OnlyOneRightInRow,
+                                        cell: item,
+                                        value: Some(v_iter),
+                                        drafts: None,
+                                    })
+                                }
+                                for item in tmp_ret.iter() {
+                                    ret.conclusion.push(Operator {
+                                        situation: Situation::RemoveDrafts,
+                                        cell: item,
+                                        value: Some(v_iter),
+                                        drafts: None,
+                                    })
+                                }
+                                return Some(ret);
+                            }
+                        }
+                    }
+                    // 判断是否在同一列
+                    {
+                        let tmp_c = same_p_set[0].rc.c;
+                        let mut flag = true;
+                        for i in 1..same_p_set.len() {
+                            if same_p_set[i].rc.c != tmp_c {
+                                flag = false;
+                                break;
+                            }
+                        }
+                        if flag {
+                            // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
+                            // 寻找相同行的值是否存在该草稿数，需要排除相同宫的值
+                            let mut tmp_ret: Vec<&Cell> = vec![];
+                            for r_iter in 0..9 {
+                                let p_iter = self.get_cell_ref_by_rc(RCCoords {
+                                    r: r_iter,
+                                    c: tmp_c,
+                                });
+                                if p_iter.gn.g != g_iter
+                                    && p_iter.status == CellStatus::DRAFT
+                                    && p_iter.drafts.is_contain(v_iter)
+                                {
+                                    tmp_ret.push(p_iter);
+                                }
+                            }
+                            if tmp_ret.len() != 0 {
+                                for item in same_p_set.iter() {
+                                    ret.condition.push(Operator {
+                                        situation: Situation::OnlyOneRightInRow,
+                                        cell: item,
+                                        value: Some(item.value),
+                                        drafts: None,
+                                    })
+                                }
+                                for item in tmp_ret.iter() {
+                                    ret.conclusion.push(Operator {
+                                        situation: Situation::RemoveDrafts,
+                                        cell: item,
+                                        value: Some(item.value),
+                                        drafts: None,
+                                    })
+                                }
+                                return Some(ret);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    // 高级排除法2
+    // 当一行列的草稿数正好在1宫时，排除该宫其他草稿数
+    pub fn inference_only_one_right_ex2(&self) -> Option<Inference> {
+        let mut ret = Inference {
+            condition: vec![],
+            conclusion: vec![],
+        };
+        // 按行遍历
+        for r_iter in 0..9 {
+            'v_iter: for v_iter in CellValue::vec_for_iter() {
+                let mut same_p_set: Vec<&Cell> = vec![];
+                'c_iter: for c_iter in 0..9 {
+                    let p = self.get_cell_ref_by_rc(RCCoords {
+                        r: r_iter,
+                        c: c_iter,
+                    });
+                    if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
+                        if p.value == v_iter {
+                            continue 'v_iter;
+                        }
+                        continue 'c_iter;
+                    } else if p.status == CellStatus::DRAFT {
+                        if p.drafts.is_contain(v_iter) {
+                            same_p_set.push(p);
+                        }
+                    }
+                }
+                if same_p_set.len() < 2 {
+                    continue 'v_iter;
+                } else {
+                    // 判断是否在同一宫
+                    {
+                        let tmp_g = same_p_set[0].gn.g;
+                        let mut flag = true;
+                        for i in 1..same_p_set.len() {
+                            if same_p_set[i].gn.g != tmp_g {
+                                flag = false;
+                                break;
+                            }
+                        }
+                        if flag {
+                            // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
+                            // 寻找相同宫的值是否存在该草稿数，需要排除相同宫的值
+                            let mut tmp_ret: Vec<&Cell> = vec![];
+                            for n_iter in 0..9 {
+                                let p_iter = self.get_cell_ref_by_gn(GNCoords {
+                                    g: tmp_g,
+                                    n: n_iter,
+                                });
+                                if p_iter.rc.r != r_iter
+                                    && p_iter.status == CellStatus::DRAFT
+                                    && p_iter.drafts.is_contain(v_iter)
+                                {
+                                    tmp_ret.push(p_iter);
+                                }
+                            }
+                            if tmp_ret.len() != 0 {
+                                for item in same_p_set.iter() {
+                                    ret.condition.push(Operator {
+                                        situation: Situation::OnlyOneRightInRow,
+                                        cell: item,
+                                        value: Some(v_iter),
+                                        drafts: None,
+                                    })
+                                }
+                                for item in tmp_ret.iter() {
+                                    ret.conclusion.push(Operator {
+                                        situation: Situation::RemoveDrafts,
+                                        cell: item,
+                                        value: Some(v_iter),
+                                        drafts: None,
+                                    })
+                                }
+                                return Some(ret);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 按列遍历
+        for c_iter in 0..9 {
+            'v_iter: for v_iter in CellValue::vec_for_iter() {
+                let mut same_p_set: Vec<&Cell> = vec![];
+                'r_iter: for r_iter in 0..9 {
+                    let p = self.get_cell_ref_by_rc(RCCoords {
+                        r: r_iter,
+                        c: c_iter,
+                    });
+                    if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
+                        if p.value == v_iter {
+                            continue 'v_iter;
+                        }
+                        continue 'r_iter;
+                    } else if p.status == CellStatus::DRAFT {
+                        if p.drafts.is_contain(v_iter) {
+                            same_p_set.push(p);
+                        }
+                    }
+                }
+                if same_p_set.len() < 2 {
+                    continue 'v_iter;
+                } else {
+                    // 判断是否在同一宫
+                    {
+                        let tmp_g = same_p_set[0].gn.g;
+                        let mut flag = true;
+                        for i in 1..same_p_set.len() {
+                            if same_p_set[i].gn.g != tmp_g {
+                                flag = false;
+                                break;
+                            }
+                        }
+                        if flag {
+                            // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
+                            // 寻找相同宫的值是否存在该草稿数，需要排除相同宫的值
+                            let mut tmp_ret: Vec<&Cell> = vec![];
+                            for n_iter in 0..9 {
+                                let p_iter = self.get_cell_ref_by_gn(GNCoords {
+                                    g: tmp_g,
+                                    n: n_iter,
+                                });
+                                if p_iter.rc.c != c_iter
+                                    && p_iter.status == CellStatus::DRAFT
+                                    && p_iter.drafts.is_contain(v_iter)
+                                {
+                                    tmp_ret.push(p_iter);
+                                }
+                            }
+                            if tmp_ret.len() != 0 {
+                                for item in same_p_set.iter() {
+                                    ret.condition.push(Operator {
+                                        situation: Situation::OnlyOneRightInRow,
+                                        cell: item,
+                                        value: Some(item.value),
+                                        drafts: None,
+                                    })
+                                }
+                                for item in tmp_ret.iter() {
+                                    ret.conclusion.push(Operator {
+                                        situation: Situation::RemoveDrafts,
+                                        cell: item,
+                                        value: Some(item.value),
+                                        drafts: None,
+                                    })
+                                }
+                                return Some(ret);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
 
     // 数对排除法
     // pub fn inference_cell_pair(&self) -> Option<Inference> {}
@@ -716,8 +1016,14 @@ impl Field {
         let inferences: Vec<FnInference> = vec![
             Field::inference_only_one_left,
             Field::inference_only_one_right,
-            // Field::inference_only_one_right_ex,
-            // Field::inference_cell_pair,
+            Field::inference_only_one_right_ex1,
+            Field::inference_only_one_right_ex2,
+            // Field::inference_cell_naked_pair,
+            // Field::inference_cell_naked_triple,
+            // Field::inference_cell_naked_quadruple,
+            // Field::inference_cell_hidden_pair,
+            // Field::inference_cell_hidden_triple,
+            // Field::inference_cell_hidden_quadruple,
         ];
         for fn_inference in inferences {
             let opt = fn_inference(&self);
@@ -754,8 +1060,13 @@ mod tests {
 
     #[test]
     fn it_works() {
+        // 简单谜题：070009800008002006906100000600000150030801020092000008000003701800600300001900060
+        // 随机谜题：100020974040000000008040100000086000680075000000010008030062540000050000485000000
+        // 简单17数：010076000805000300000000000270000000000500100600000000003000002000900040000000076
+        // 复杂17数：800000000003600000070090200050007000000045700000100030001000068008500010090000400
+        // 复杂17数：000000100000500306000000500030600412060300958800000000000000000100000000000000000
         let mut field = Field::initial_by_string(
-            &"070009800008002006906100000600000150030801020092000008000003701800600300001900060"
+            &"100020974040000000008040100000086000680075000000010008030062540000050000485000000"
                 .to_string(),
         )
         .unwrap();
@@ -766,6 +1077,7 @@ mod tests {
         loop {
             let inteference = field.search_one_inference();
             field = field.apply_one_inference(inteference.unwrap());
+            field.print();
             if field.check_if_finish() {
                 field.print();
                 println!("Finish!");
