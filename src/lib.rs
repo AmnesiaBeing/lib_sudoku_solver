@@ -190,7 +190,20 @@ pub enum Situation {
     OnlyOneLeft,
     OnlyOneRightInRow,
     OnlyOneRightInCol,
-    OnlyOneInGrid,
+    OnlyOneRightInGrid,
+    LockedCandidatesInRow,
+    LockedCandidatesInCol,
+    LockedCandidatesInGridByRow,
+    LockedCandidatesInGridByCol,
+    NakedPairInRow,
+    NakedPairInCol,
+    NakedPairInGrid,
+    NakedTripleInRow,
+    NakedTripleInCol,
+    NakedTripleInGrid,
+    NakedQuadrupleInRow,
+    NakedQuadrupleInCol,
+    NakedQuadrupleInGrid,
 }
 
 pub struct Operator<'a> {
@@ -231,23 +244,33 @@ impl fmt::Display for Inference<'_> {
                     c.cell.rc.c,
                     (c.value.unwrap().to_index().unwrap() + 1)
                 )?;
-                if index < self.condition.len() {
-                    write!(f, "&")?;
+                if index < self.condition.len() - 1 {
+                    write!(f, " 和 ")?;
                 }
             }
         }
         if self.conclusion.len() != 0 {
-            write!(f, "，推理出：")?;
+            write!(f, " ，推导出： ")?;
             for (index, c) in self.conclusion.iter().enumerate() {
-                write!(
-                    f,
-                    "-R{}C{}V{}",
-                    c.cell.rc.r,
-                    c.cell.rc.c,
-                    (c.value.unwrap().to_index().unwrap() + 1)
-                )?;
-                if index < self.conclusion.len() {
-                    write!(f, "&")?;
+                if c.situation == Situation::SetValue {
+                    write!(
+                        f,
+                        "R{}C{}V{}",
+                        c.cell.rc.r,
+                        c.cell.rc.c,
+                        (c.value.unwrap().to_index().unwrap() + 1)
+                    )?;
+                } else if c.situation == Situation::RemoveDrafts {
+                    write!(
+                        f,
+                        "R{}C{}-D{}",
+                        c.cell.rc.r,
+                        c.cell.rc.c,
+                        (c.value.unwrap().to_index().unwrap() + 1)
+                    )?;
+                }
+                if index < self.conclusion.len() - 1 {
+                    write!(f, " 和 ")?;
                 }
             }
         }
@@ -472,7 +495,7 @@ impl Field {
         }
     }
 
-    fn make_conclusion_when_set_value<'a>(
+    fn make_conclusion_with_remove_drafts_when_set_value<'a>(
         field: &'a Field,
         set_value_operator: Operator<'a>,
     ) -> Vec<Operator<'a>> {
@@ -487,8 +510,6 @@ impl Field {
                 });
                 if p.status == CellStatus::DRAFT {
                     if p.drafts.is_contain(v) {
-                        // let mut d = Drafts { drafts: [false; 9] };
-                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
@@ -508,8 +529,6 @@ impl Field {
                 });
                 if p.status == CellStatus::DRAFT {
                     if p.drafts.is_contain(v) {
-                        // let mut d = Drafts { drafts: [false; 9] };
-                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
@@ -529,8 +548,6 @@ impl Field {
                 });
                 if p.status == CellStatus::DRAFT {
                     if p.drafts.is_contain(v) {
-                        // let mut d = Drafts { drafts: [false; 9] };
-                        // d.remove_draft(set_value_operator.value.unwrap());
                         ret.push(Operator {
                             situation: Situation::RemoveDrafts,
                             cell: p,
@@ -575,8 +592,9 @@ impl Field {
                     drafts: None,
                 };
                 // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
-                ret.conclusion
-                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
+                ret.conclusion.append(
+                    &mut Self::make_conclusion_with_remove_drafts_when_set_value(self, sv_op),
+                );
             }
         }
         if ret.condition.len() != 0 && ret.conclusion.len() != 0 {
@@ -586,8 +604,60 @@ impl Field {
         }
     }
 
+    // 按行排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
+    pub fn inference_only_one_right_in_row(&self) -> Option<Inference> {
+        let mut ret = Inference {
+            condition: vec![],
+            conclusion: vec![],
+        };
+        for r in 0..9 {
+            for c in 0..9 {
+                let p = self.get_cell_ref_by_rc(RCCoords { r, c });
+                if p.status == CellStatus::DRAFT {
+                    for (_, d) in p.drafts.to_vec().iter().enumerate() {
+                        let mut flag = true;
+                        for c_iter in 0..9 {
+                            if c_iter == c {
+                                continue;
+                            }
+                            let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r, c: c_iter });
+                            if p_iter.status == CellStatus::DRAFT {
+                                if p_iter.drafts.is_contain(*d) {
+                                    flag = false;
+                                    break;
+                                }
+                            }
+                        }
+                        // 该草稿唯一
+                        if flag {
+                            ret.condition.push(Operator {
+                                situation: Situation::OnlyOneRightInRow,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            });
+                            let sv_op = Operator {
+                                situation: Situation::SetValue,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            };
+                            ret.conclusion.append(
+                                &mut Self::make_conclusion_with_remove_drafts_when_set_value(
+                                    self, sv_op,
+                                ),
+                            );
+                            return Some(ret);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     // 排除法，对于每个格子内的草稿值，按照每行、每列、每宫方向进行判断，如果唯一，则填写该值，同时去除其余同一行列宫的草稿值
-    pub fn inference_only_one_right(&self) -> Option<Inference> {
+    pub fn inference_only_one_right_in_col(&self) -> Option<Inference> {
         let mut ret = Inference {
             condition: vec![],
             conclusion: vec![],
@@ -597,116 +667,94 @@ impl Field {
                 let p = self.get_cell_ref_by_rc(RCCoords { r: r, c: c });
                 if p.status == CellStatus::DRAFT {
                     for (_, d) in p.drafts.to_vec().iter().enumerate() {
-                        // 按列检索
-                        {
-                            let mut flag = true;
-                            for r_iter in 0..9 {
-                                if r_iter == r {
-                                    continue;
-                                }
-                                let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
-                                if p_iter.status == CellStatus::DRAFT {
-                                    if p_iter.drafts.is_contain(*d) {
-                                        flag = false;
-                                        break;
-                                    }
-                                }
+                        let mut flag = true;
+                        for r_iter in 0..9 {
+                            if r_iter == r {
+                                continue;
                             }
-                            if flag {
-                                // 该草稿唯一
-                                ret.condition.push(Operator {
-                                    situation: Situation::OnlyOneRightInCol,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                });
-                                // 同时，该格子需要填写该数字
-                                let sv_op = Operator {
-                                    situation: Situation::SetValue,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                };
-                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
-                                ret.conclusion
-                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
-                                return Some(ret);
+                            let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
+                            if p_iter.status == CellStatus::DRAFT {
+                                if p_iter.drafts.is_contain(*d) {
+                                    flag = false;
+                                    break;
+                                }
                             }
                         }
-                        // 按行检索
-                        {
-                            let mut flag = true;
-                            for c_iter in 0..9 {
-                                if c_iter == c {
-                                    continue;
-                                }
-                                let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r, c: c_iter });
-                                if p_iter.status == CellStatus::DRAFT {
-                                    if p_iter.drafts.is_contain(*d) {
-                                        flag = false;
-                                        break;
-                                    }
-                                }
+                        // 该草稿唯一
+                        if flag {
+                            ret.condition.push(Operator {
+                                situation: Situation::OnlyOneRightInCol,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            });
+                            let sv_op = Operator {
+                                situation: Situation::SetValue,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            };
+                            ret.conclusion.append(
+                                &mut Self::make_conclusion_with_remove_drafts_when_set_value(
+                                    self, sv_op,
+                                ),
+                            );
+                            return Some(ret);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    // 排除法，对于每个格子内的草稿值，按照每行、每列、每宫方向进行判断，如果唯一，则填写该值，同时去除其余同一行列宫的草稿值
+    pub fn inference_only_one_right_in_grid(&self) -> Option<Inference> {
+        let mut ret = Inference {
+            condition: vec![],
+            conclusion: vec![],
+        };
+        for r in 0..9 {
+            for c in 0..9 {
+                let p = self.get_cell_ref_by_rc(RCCoords { r: r, c: c });
+                if p.status == CellStatus::DRAFT {
+                    for (_, d) in p.drafts.to_vec().iter().enumerate() {
+                        let mut flag = true;
+                        for n_iter in 0..9 {
+                            if n_iter == p.gn.n {
+                                continue;
                             }
-                            if flag {
-                                // 该草稿唯一
-                                ret.condition.push(Operator {
-                                    situation: Situation::OnlyOneRightInCol,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                });
-                                // 同时，该格子需要填写该数字
-                                let sv_op = Operator {
-                                    situation: Situation::SetValue,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                };
-                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
-                                ret.conclusion
-                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
-                                return Some(ret);
+                            let p_iter = self.get_cell_ref_by_gn(GNCoords {
+                                g: p.gn.g,
+                                n: n_iter,
+                            });
+                            if p_iter.status == CellStatus::DRAFT {
+                                if p_iter.drafts.is_contain(*d) {
+                                    flag = false;
+                                    break;
+                                }
                             }
                         }
-                        // 按宫检索
-                        {
-                            let mut flag = true;
-                            for n_iter in 0..9 {
-                                if n_iter == p.gn.n {
-                                    continue;
-                                }
-                                let p_iter = self.get_cell_ref_by_gn(GNCoords {
-                                    g: p.gn.g,
-                                    n: n_iter,
-                                });
-                                if p_iter.status == CellStatus::DRAFT {
-                                    if p_iter.drafts.is_contain(*d) {
-                                        flag = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            if flag {
-                                // 该草稿唯一
-                                ret.condition.push(Operator {
-                                    situation: Situation::OnlyOneRightInCol,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                });
-                                // 同时，该格子需要填写该数字
-                                let sv_op = Operator {
-                                    situation: Situation::SetValue,
-                                    cell: p,
-                                    value: Some(*d),
-                                    drafts: None,
-                                };
-                                // 总的结果是，该格子需要填写该数字，同时，同一行列宫内的该数字都需要去除
-                                ret.conclusion
-                                    .append(&mut Self::make_conclusion_when_set_value(self, sv_op));
-                                return Some(ret);
-                            }
+                        // 该草稿唯一
+                        if flag {
+                            ret.condition.push(Operator {
+                                situation: Situation::OnlyOneRightInCol,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            });
+                            let sv_op = Operator {
+                                situation: Situation::SetValue,
+                                cell: p,
+                                value: Some(*d),
+                                drafts: None,
+                            };
+                            ret.conclusion.append(
+                                &mut Self::make_conclusion_with_remove_drafts_when_set_value(
+                                    self, sv_op,
+                                ),
+                            );
+                            return Some(ret);
                         }
                     }
                 }
@@ -773,7 +821,7 @@ impl Field {
                             if tmp_ret.len() != 0 {
                                 for item in same_p_set.iter() {
                                     ret.condition.push(Operator {
-                                        situation: Situation::OnlyOneRightInRow,
+                                        situation: Situation::LockedCandidatesInGridByRow,
                                         cell: item,
                                         value: Some(v_iter),
                                         drafts: None,
@@ -820,7 +868,7 @@ impl Field {
                             if tmp_ret.len() != 0 {
                                 for item in same_p_set.iter() {
                                     ret.condition.push(Operator {
-                                        situation: Situation::OnlyOneRightInRow,
+                                        situation: Situation::LockedCandidatesInGridByCol,
                                         cell: item,
                                         value: Some(item.value),
                                         drafts: None,
@@ -904,7 +952,7 @@ impl Field {
                             if tmp_ret.len() != 0 {
                                 for item in same_p_set.iter() {
                                     ret.condition.push(Operator {
-                                        situation: Situation::OnlyOneRightInRow,
+                                        situation: Situation::LockedCandidatesInRow,
                                         cell: item,
                                         value: Some(v_iter),
                                         drafts: None,
@@ -978,7 +1026,7 @@ impl Field {
                             if tmp_ret.len() != 0 {
                                 for item in same_p_set.iter() {
                                     ret.condition.push(Operator {
-                                        situation: Situation::OnlyOneRightInRow,
+                                        situation: Situation::LockedCandidatesInCol,
                                         cell: item,
                                         value: Some(item.value),
                                         drafts: None,
@@ -1003,8 +1051,10 @@ impl Field {
         None
     }
 
-    // 数对排除法
-    // pub fn inference_cell_pair(&self) -> Option<Inference> {}
+    // 2数对排除法
+    pub fn inference_cell_naked_pair(&self) -> Option<Inference> {
+        None
+    }
 
     /// # 数独推理过程
     /// 1. 对每个格子判断唯一性，当只有1个候选数时，该格子必定为此数，填写该数，同时去除同一行列宫的该草稿数（唯余法）
@@ -1015,10 +1065,12 @@ impl Field {
     pub fn search_one_inference(&self) -> Option<Inference> {
         let inferences: Vec<FnInference> = vec![
             Field::inference_only_one_left,
-            Field::inference_only_one_right,
+            Field::inference_only_one_right_in_row,
+            Field::inference_only_one_right_in_col,
+            Field::inference_only_one_right_in_grid,
             Field::inference_only_one_right_ex1,
             Field::inference_only_one_right_ex2,
-            // Field::inference_cell_naked_pair,
+            Field::inference_cell_naked_pair,
             // Field::inference_cell_naked_triple,
             // Field::inference_cell_naked_quadruple,
             // Field::inference_cell_hidden_pair,
@@ -1066,7 +1118,7 @@ mod tests {
         // 复杂17数：800000000003600000070090200050007000000045700000100030001000068008500010090000400
         // 复杂17数：000000100000500306000000500030600412060300958800000000000000000100000000000000000
         let mut field = Field::initial_by_string(
-            &"100020974040000000008040100000086000680075000000010008030062540000050000485000000"
+            &"800000000003600000070090200050007000000045700000100030001000068008500010090000400"
                 .to_string(),
         )
         .unwrap();
