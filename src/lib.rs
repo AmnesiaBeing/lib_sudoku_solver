@@ -1051,8 +1051,14 @@ impl Field {
         None
     }
 
-    // 2数对排除法
-    pub fn inference_cell_naked_pair(&self) -> Option<Inference> {
+    // 显性2数对排除法
+    // 在同一行/列/宫内，存在2个格子的数字数量为2且相同，则该格子为2数对，同行内其余该草稿数可以被移除
+    pub fn inference_cell_naked_pair_in_row(&self) -> Option<Inference> {
+        for r_iter in 0..9 {
+            let mut avail_v_set: Vec<&CellValue> = vec![];
+            
+
+        }
         None
     }
 
@@ -1070,7 +1076,7 @@ impl Field {
             Field::inference_only_one_right_in_grid,
             Field::inference_only_one_right_ex1,
             Field::inference_only_one_right_ex2,
-            Field::inference_cell_naked_pair,
+            Field::inference_cell_naked_pair_in_row,
             // Field::inference_cell_naked_triple,
             // Field::inference_cell_naked_quadruple,
             // Field::inference_cell_hidden_pair,
