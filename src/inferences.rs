@@ -39,13 +39,11 @@ pub enum InferenceType {
     // NakedQuadrupleInGrid,
 }
 
-pub struct Inferences {
-    inferences: Vec<(InferenceType, FnInference)>,
-}
+pub struct Inferences;
 impl Inferences {
     pub fn search<'a>(field: &'a Field) -> Option<Inference> {
         let vecfn: Vec<FnInference> = vec![search_only_one_left, search_only_one_right_in_row];
-        vecfn.iter().find_map(|fn_t| fn_t(field))
+        vecfn.iter().find_map(|&fn_t| fn_t(field))
     }
 }
 
