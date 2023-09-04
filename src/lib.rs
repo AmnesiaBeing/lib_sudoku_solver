@@ -1,15 +1,10 @@
 pub mod inferences;
 pub mod types;
 
-#[macro_use]
-extern crate trait_enum;
-
 #[cfg(test)]
 mod tests {
-    use trait_enum::Deref;
-
     use crate::{
-        inferences::{InferenceTrait, InferenceType, OnlyOneRightInRow},
+        inferences::{InferenceType, Inferences},
         types::Field,
     };
 
@@ -29,20 +24,17 @@ mod tests {
         // println!("{:?}", field.find_conflict());
         // println!("{:?}", field.find_empty_drafts());
 
-        let combined = InferenceType::OnlyOneRightInRow(OnlyOneRightInRow);
-        let deref: &dyn InferenceTrait = combined.deref();
-        let inference = deref.search(&field);
-        println!("{:?}", inference);
-
-        // loop {
-        //     let inteference = field.search_one_inference();
-        //     field = field.apply_one_inference(inteference.unwrap());
-        //     field.print();
-        //     if field.check_if_finish() {
-        //         field.print();
-        //         println!("Finish!");
-        //         break;
-        //     }
-        // }
+        loop {
+            let inference = Inferences::search(&field);
+            println!("{:?}", inference);
+            break;
+            // field = field.apply_one_inference(inteference.unwrap());
+            // field.print();
+            // if field.check_if_finish() {
+            //     field.print();
+            //     println!("Finish!");
+            //     break;
+            // }
+        }
     }
 }

@@ -10,34 +10,42 @@ pub struct CellAndValue<'a> {
 
 #[derive(Debug)]
 pub struct Inference<'a> {
+    inference_type: InferenceType,
     condition: Vec<CellAndValue<'a>>,
     conclusion_set_value: Option<Vec<CellAndValue<'a>>>,
     conclusion_remove_drafts: Option<Vec<CellAndValue<'a>>>,
 }
 
-pub trait InferenceTrait {
-    fn search<'a>(&'a self, field: &'a Field) -> Option<Inference>;
+type FnInference = fn(&Field) -> Option<Inference>;
+
+#[derive(Debug)]
+pub enum InferenceType {
+    OnlyOneLeft,
+    OnlyOneRightInRow,
+    // OnlyOneRightInCol,
+    // OnlyOneRightInGrid,
+    // LockedCandidatesInRow,
+    // LockedCandidatesInCol,
+    // LockedCandidatesInGridByRow,
+    // LockedCandidatesInGridByCol,
+    // NakedPairInRow,
+    // NakedPairInCol,
+    // NakedPairInGrid,
+    // NakedTripleInRow,
+    // NakedTripleInCol,
+    // NakedTripleInGrid,
+    // NakedQuadrupleInRow,
+    // NakedQuadrupleInCol,
+    // NakedQuadrupleInGrid,
 }
 
-trait_enum! {
-    pub enum InferenceType:InferenceTrait {
-        OnlyOneLeft,
-        OnlyOneRightInRow,
-        // OnlyOneRightInCol,
-        // OnlyOneRightInGrid,
-        // LockedCandidatesInRow,
-        // LockedCandidatesInCol,
-        // LockedCandidatesInGridByRow,
-        // LockedCandidatesInGridByCol,
-        // NakedPairInRow,
-        // NakedPairInCol,
-        // NakedPairInGrid,
-        // NakedTripleInRow,
-        // NakedTripleInCol,
-        // NakedTripleInGrid,
-        // NakedQuadrupleInRow,
-        // NakedQuadrupleInCol,
-        // NakedQuadrupleInGrid,
+pub struct Inferences {
+    inferences: Vec<(InferenceType, FnInference)>,
+}
+impl Inferences {
+    pub fn search<'a>(field: &'a Field) -> Option<Inference> {
+        let vecfn: Vec<FnInference> = vec![search_only_one_left, search_only_one_right_in_row];
+        vecfn.iter().find_map(|fn_t| fn_t(field))
     }
 }
 
@@ -163,66 +171,62 @@ fn make_removing_drafts_when_set_value<'a>(
 }
 
 // 唯余法，遍历所有草稿单元格，如果存在唯一草稿，则说明这个草稿填写该数字
-pub struct OnlyOneLeft;
-impl InferenceTrait for OnlyOneLeft {
-    fn search<'a>(&'a self, field: &'a Field) -> Option<Inference> {
-        field
-            .collect_all_drafts_cells()
-            .iter()
-            .find_map(|&p| {
-                (*p).drafts
-                    .try_get_the_only_one()
-                    .and_then(|cv| Some(CellAndValue { cell: p, value: cv }))
-            })
-            .and_then(move |ret| {
-                Some({
-                    Inference {
-                        condition: vec![ret],
-                        conclusion_set_value: Some(vec![ret]),
-                        conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
-                    }
-                })
-            })
-    }
-}
-
-// 按行排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
-pub struct OnlyOneRightInRow;
-impl InferenceTrait for OnlyOneRightInRow {
-    fn search<'a>(&'a self, field: &'a Field) -> Option<Inference> {
-        // [r,c]->只要有一行有就行，返回值Option<CellAndValue> find_map(|| 条件只要有一个满足)
-        // c([rv,d])->只要有一个格子满足，返回值Option<CellAndValue{cell:p,value:v}>，find_map(||)
-
-        field
-            .collect_all_drafts_cells_by_rc()
-            .iter()
-            .find_map(|vr| {
-                vr.iter().find_map(|&p| {
-                    p.drafts
-                        .to_vec()
-                        .iter()
-                        .find(|&v| {
-                            /* 遍历当前行，在当前行中，除了当前格子外，其他格子不存在相同草稿值 */
-                            vr.iter().copied().any(|tmp_p| {
-                                (!(tmp_p.drafts.is_contain(*v))) && (tmp_p.rc.c != p.rc.c)
-                            })
-                        })
-                        .and_then(|&ret| {
-                            Some(CellAndValue {
-                                cell: p,
-                                value: ret,
-                            })
-                        })
-                })
-            })
-            .and_then(|ret| {
-                Some(Inference {
+fn search_only_one_left<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells()
+        .iter()
+        .find_map(|&p| {
+            (*p).drafts
+                .try_get_the_only_one()
+                .and_then(|cv| Some(CellAndValue { cell: p, value: cv }))
+        })
+        .and_then(move |ret| {
+            Some({
+                Inference {
+                    inference_type: InferenceType::OnlyOneLeft,
                     condition: vec![ret],
                     conclusion_set_value: Some(vec![ret]),
                     conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
-                })
+                }
             })
-    }
+        })
+}
+
+// 按行排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
+fn search_only_one_right_in_row<'a>(field: &'a Field) -> Option<Inference> {
+    // [r,c]->只要有一行有就行，返回值Option<CellAndValue> find_map(|| 条件只要有一个满足)
+    // c([rv,d])->只要有一个格子满足，返回值Option<CellAndValue{cell:p,value:v}>，find_map(||)
+
+    field
+        .collect_all_drafts_cells_by_rc()
+        .iter()
+        .find_map(|vr| {
+            vr.iter().find_map(|&p| {
+                p.drafts
+                    .to_vec()
+                    .iter()
+                    .find(|&v| {
+                        /* 遍历当前行，在当前行中，除了当前格子外，其他格子不存在相同草稿值 */
+                        vr.iter()
+                            .copied()
+                            .any(|tmp_p| (!(tmp_p.drafts.is_contain(*v))) && (tmp_p.rc.c != p.rc.c))
+                    })
+                    .and_then(|&ret| {
+                        Some(CellAndValue {
+                            cell: p,
+                            value: ret,
+                        })
+                    })
+            })
+        })
+        .and_then(|ret| {
+            Some(Inference {
+                inference_type: InferenceType::OnlyOneRightInRow,
+                condition: vec![ret],
+                conclusion_set_value: Some(vec![ret]),
+                conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
+            })
+        })
 }
 
 // pub fn inference_only_one_right_in_row(&self) -> Option<Inference> {
