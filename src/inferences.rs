@@ -22,28 +22,59 @@ type FnInference = fn(&Field) -> Option<Inference>;
 pub enum InferenceType {
     OnlyOneLeft,
     OnlyOneRightInRow,
-    // OnlyOneRightInCol,
-    // OnlyOneRightInGrid,
-    // LockedCandidatesInRow,
-    // LockedCandidatesInCol,
-    // LockedCandidatesInGridByRow,
-    // LockedCandidatesInGridByCol,
-    // NakedPairInRow,
-    // NakedPairInCol,
-    // NakedPairInGrid,
-    // NakedTripleInRow,
-    // NakedTripleInCol,
-    // NakedTripleInGrid,
-    // NakedQuadrupleInRow,
-    // NakedQuadrupleInCol,
-    // NakedQuadrupleInGrid,
+    OnlyOneRightInCol,
+    OnlyOneRightInGrid,
+    LockedCandidatesInRowByGrid,
+    LockedCandidatesInColByGrid,
+    LockedCandidatesInGridByRow,
+    LockedCandidatesInGridByCol,
+    NakedPairInRow,
+    NakedPairInCol,
+    NakedPairInGrid,
+    NakedTripleInRow,
+    NakedTripleInCol,
+    NakedTripleInGrid,
+    NakedQuadrupleInRow,
+    NakedQuadrupleInCol,
+    NakedQuadrupleInGrid,
 }
 
 pub struct Inferences;
 impl Inferences {
     pub fn search<'a>(field: &'a Field) -> Option<Inference> {
-        let vecfn: Vec<FnInference> = vec![search_only_one_left, search_only_one_right_in_row];
-        vecfn.iter().find_map(|&fn_t| fn_t(field))
+        let vec_fn_inference: Vec<FnInference> = vec![
+            search_only_one_left,
+            search_only_one_right_in_row,
+            search_only_one_right_in_col,
+            search_only_one_right_in_grid,
+        ];
+        vec_fn_inference.iter().find_map(|&fn_t| fn_t(field))
+    }
+
+    pub fn apply(field: &Field, inference: Inference) -> Field {
+        let mut ret = field.clone();
+        if inference.conclusion_set_value.is_some() {
+            inference
+                .conclusion_set_value
+                .unwrap()
+                .iter()
+                .for_each(|cv| {
+                    let p = ret.get_cell_mut_by_rc(cv.cell.rc);
+                    p.value = cv.value;
+                    p.status = CellStatus::SOLVE;
+                })
+        };
+        if inference.conclusion_remove_drafts.is_some() {
+            inference
+                .conclusion_remove_drafts
+                .unwrap()
+                .iter()
+                .for_each(|cv| {
+                    let p = ret.get_cell_mut_by_rc(cv.cell.rc);
+                    p.drafts.remove_draft(cv.value);
+                })
+        }
+        ret
     }
 }
 
@@ -192,9 +223,6 @@ fn search_only_one_left<'a>(field: &'a Field) -> Option<Inference> {
 
 // 按行排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
 fn search_only_one_right_in_row<'a>(field: &'a Field) -> Option<Inference> {
-    // [r,c]->只要有一行有就行，返回值Option<CellAndValue> find_map(|| 条件只要有一个满足)
-    // c([rv,d])->只要有一个格子满足，返回值Option<CellAndValue{cell:p,value:v}>，find_map(||)
-
     field
         .collect_all_drafts_cells_by_rc()
         .iter()
@@ -204,10 +232,9 @@ fn search_only_one_right_in_row<'a>(field: &'a Field) -> Option<Inference> {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        /* 遍历当前行，在当前行中，除了当前格子外，其他格子不存在相同草稿值 */
-                        vr.iter()
-                            .copied()
-                            .any(|tmp_p| (!(tmp_p.drafts.is_contain(*v))) && (tmp_p.rc.c != p.rc.c))
+                        !(vr.iter().fold(false, |acc, tmp_p| {
+                            acc || ((tmp_p.rc.c != p.rc.c) && (tmp_p.drafts.is_contain(*v)))
+                        }))
                     })
                     .and_then(|&ret| {
                         Some(CellAndValue {
@@ -227,166 +254,77 @@ fn search_only_one_right_in_row<'a>(field: &'a Field) -> Option<Inference> {
         })
 }
 
-// pub fn inference_only_one_right_in_row(&self) -> Option<Inference> {
-//     let mut ret = Inference {
-//         condition: vec![],
-//         conclusion: vec![],
-//     };
-//     for r in 0..9 {
-//         for c in 0..9 {
-//             let p = self.get_cell_ref_by_rc(RCCoords { r, c });
-//             if p.status == CellStatus::DRAFT {
-//                 for (_, d) in p.drafts.to_vec().iter().enumerate() {
-//                     let mut flag = true;
-//                     for c_iter in 0..9 {
-//                         if c_iter == c {
-//                             continue;
-//                         }
-//                         let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r, c: c_iter });
-//                         if p_iter.status == CellStatus::DRAFT {
-//                             if p_iter.drafts.is_contain(*d) {
-//                                 flag = false;
-//                                 break;
-//                             }
-//                         }
-//                     }
-//                     // 该草稿唯一
-//                     if flag {
-//                         ret.condition.push(Operator {
-//                             situation: Situation::OnlyOneRightInRow,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         });
-//                         let sv_op = Operator {
-//                             situation: Situation::SetValue,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         };
-//                         ret.conclusion.append(
-//                             &mut Self::make_conclusion_with_remove_drafts_when_set_value(
-//                                 self, sv_op,
-//                             ),
-//                         );
-//                         return Some(ret);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     None
-// }
+// 按列排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
+fn search_only_one_right_in_col<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells_by_cr()
+        .iter()
+        .find_map(|vc| {
+            vc.iter().find_map(|&p| {
+                p.drafts
+                    .to_vec()
+                    .iter()
+                    .find(|&v| {
+                        !(vc.iter().fold(false, |acc, tmp_p| {
+                            acc || ((tmp_p.rc.r != p.rc.r) && (tmp_p.drafts.is_contain(*v)))
+                        }))
+                    })
+                    .and_then(|&ret| {
+                        Some(CellAndValue {
+                            cell: p,
+                            value: ret,
+                        })
+                    })
+            })
+        })
+        .and_then(|ret| {
+            Some(Inference {
+                inference_type: InferenceType::OnlyOneRightInCol,
+                condition: vec![ret],
+                conclusion_set_value: Some(vec![ret]),
+                conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
+            })
+        })
+}
 
-// // 排除法，对于每个格子内的草稿值，按照每行、每列、每宫方向进行判断，如果唯一，则填写该值，同时去除其余同一行列宫的草稿值
-// pub fn inference_only_one_right_in_col(&self) -> Option<Inference> {
-//     let mut ret = Inference {
-//         condition: vec![],
-//         conclusion: vec![],
-//     };
-//     for r in 0..9 {
-//         for c in 0..9 {
-//             let p = self.get_cell_ref_by_rc(RCCoords { r: r, c: c });
-//             if p.status == CellStatus::DRAFT {
-//                 for (_, d) in p.drafts.to_vec().iter().enumerate() {
-//                     let mut flag = true;
-//                     for r_iter in 0..9 {
-//                         if r_iter == r {
-//                             continue;
-//                         }
-//                         let p_iter = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
-//                         if p_iter.status == CellStatus::DRAFT {
-//                             if p_iter.drafts.is_contain(*d) {
-//                                 flag = false;
-//                                 break;
-//                             }
-//                         }
-//                     }
-//                     // 该草稿唯一
-//                     if flag {
-//                         ret.condition.push(Operator {
-//                             situation: Situation::OnlyOneRightInCol,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         });
-//                         let sv_op = Operator {
-//                             situation: Situation::SetValue,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         };
-//                         ret.conclusion.append(
-//                             &mut Self::make_conclusion_with_remove_drafts_when_set_value(
-//                                 self, sv_op,
-//                             ),
-//                         );
-//                         return Some(ret);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     None
-// }
+// 按宫排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
+fn search_only_one_right_in_grid<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells_by_gn()
+        .iter()
+        .find_map(|vg| {
+            vg.iter().find_map(|&p| {
+                p.drafts
+                    .to_vec()
+                    .iter()
+                    .find(|&v| {
+                        !(vg.iter().fold(false, |acc, tmp_p| {
+                            acc || ((tmp_p.gn.n != p.gn.n) && (tmp_p.drafts.is_contain(*v)))
+                        }))
+                    })
+                    .and_then(|&ret| {
+                        Some(CellAndValue {
+                            cell: p,
+                            value: ret,
+                        })
+                    })
+            })
+        })
+        .and_then(|ret| {
+            Some(Inference {
+                inference_type: InferenceType::OnlyOneRightInGrid,
+                condition: vec![ret],
+                conclusion_set_value: Some(vec![ret]),
+                conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
+            })
+        })
+}
 
-// // 排除法，对于每个格子内的草稿值，按照每行、每列、每宫方向进行判断，如果唯一，则填写该值，同时去除其余同一行列宫的草稿值
-// pub fn inference_only_one_right_in_grid(&self) -> Option<Inference> {
-//     let mut ret = Inference {
-//         condition: vec![],
-//         conclusion: vec![],
-//     };
-//     for r in 0..9 {
-//         for c in 0..9 {
-//             let p = self.get_cell_ref_by_rc(RCCoords { r: r, c: c });
-//             if p.status == CellStatus::DRAFT {
-//                 for (_, d) in p.drafts.to_vec().iter().enumerate() {
-//                     let mut flag = true;
-//                     for n_iter in 0..9 {
-//                         if n_iter == p.gn.n {
-//                             continue;
-//                         }
-//                         let p_iter = self.get_cell_ref_by_gn(GNCoords {
-//                             g: p.gn.g,
-//                             n: n_iter,
-//                         });
-//                         if p_iter.status == CellStatus::DRAFT {
-//                             if p_iter.drafts.is_contain(*d) {
-//                                 flag = false;
-//                                 break;
-//                             }
-//                         }
-//                     }
-//                     // 该草稿唯一
-//                     if flag {
-//                         ret.condition.push(Operator {
-//                             situation: Situation::OnlyOneRightInCol,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         });
-//                         let sv_op = Operator {
-//                             situation: Situation::SetValue,
-//                             cell: p,
-//                             value: Some(*d),
-//                             drafts: None,
-//                         };
-//                         ret.conclusion.append(
-//                             &mut Self::make_conclusion_with_remove_drafts_when_set_value(
-//                                 self, sv_op,
-//                             ),
-//                         );
-//                         return Some(ret);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     None
-// }
-
-// // 高级排除法1
-// // 当一宫内的某种草稿值当且仅当在同一行/列时（其他行列不能有），可以排除行/列内其余格子的该草稿值
+// 高级排除法1
+// 当一宫内的某种草稿值当且仅当在同一行/列时（其他行列不能有），可以排除行/列内其余格子的该草稿值
+pub fn search_locked_candidates_in_row_by_grid<'a>(field: &'a Field) -> Option<Inference> {
+    None
+}
 // pub fn inference_only_one_right_ex1(&self) -> Option<Inference> {
 //     let mut ret = Inference {
 //         condition: vec![],

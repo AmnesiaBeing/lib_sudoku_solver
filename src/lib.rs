@@ -26,15 +26,13 @@ mod tests {
 
         loop {
             let inference = Inferences::search(&field);
-            println!("{:?}", inference);
-            break;
-            // field = field.apply_one_inference(inteference.unwrap());
-            // field.print();
-            // if field.check_if_finish() {
-            //     field.print();
-            //     println!("Finish!");
-            //     break;
-            // }
+            field = Inferences::apply(&field, inference.unwrap());
+            field.print();
+            if field.check_if_finish() {
+                field.print();
+                println!("Finish!");
+                break;
+            }
         }
     }
 }
