@@ -237,19 +237,19 @@ fn search_only_one_right_in_row<'a>(field: &'a Field) -> Option<Inference> {
                         }))
                     })
                     .and_then(|&ret| {
-                        Some(CellAndValue {
+                        let cv = CellAndValue {
                             cell: p,
                             value: ret,
+                        };
+                        Some(Inference {
+                            inference_type: InferenceType::OnlyOneRightInRow,
+                            condition: vec![cv],
+                            conclusion_set_value: Some(vec![cv]),
+                            conclusion_remove_drafts: make_removing_drafts_when_set_value(
+                                field, cv,
+                            ),
                         })
                     })
-            })
-        })
-        .and_then(|ret| {
-            Some(Inference {
-                inference_type: InferenceType::OnlyOneRightInRow,
-                condition: vec![ret],
-                conclusion_set_value: Some(vec![ret]),
-                conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
             })
         })
 }
@@ -270,25 +270,58 @@ fn search_only_one_right_in_col<'a>(field: &'a Field) -> Option<Inference> {
                         }))
                     })
                     .and_then(|&ret| {
-                        Some(CellAndValue {
+                        let cv = CellAndValue {
                             cell: p,
                             value: ret,
+                        };
+                        Some(Inference {
+                            inference_type: InferenceType::OnlyOneRightInCol,
+                            condition: vec![cv],
+                            conclusion_set_value: Some(vec![cv]),
+                            conclusion_remove_drafts: make_removing_drafts_when_set_value(
+                                field, cv,
+                            ),
                         })
                     })
-            })
-        })
-        .and_then(|ret| {
-            Some(Inference {
-                inference_type: InferenceType::OnlyOneRightInCol,
-                condition: vec![ret],
-                conclusion_set_value: Some(vec![ret]),
-                conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
             })
         })
 }
 
 // 按宫排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
 fn search_only_one_right_in_grid<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells_by_gn()
+        .iter()
+        .find_map(|vg| {
+            vg.iter().find_map(|&p| {
+                p.drafts
+                    .to_vec()
+                    .iter()
+                    .find(|&v| {
+                        !(vg.iter().fold(false, |acc, tmp_p| {
+                            acc || ((tmp_p.gn.n != p.gn.n) && (tmp_p.drafts.is_contain(*v)))
+                        }))
+                    })
+                    .and_then(|&ret| {
+                        let cv = CellAndValue {
+                            cell: p,
+                            value: ret,
+                        };
+                        Some(Inference {
+                            inference_type: InferenceType::OnlyOneRightInGrid,
+                            condition: vec![cv],
+                            conclusion_set_value: Some(vec![cv]),
+                            conclusion_remove_drafts: make_removing_drafts_when_set_value(
+                                field, cv,
+                            ),
+                        })
+                    })
+            })
+        })
+}
+
+// 当一宫内的某种草稿值当且仅当在同一行时，可以排除行内其余格子的该草稿值
+pub fn search_locked_candidates_in_row_by_grid<'a>(field: &'a Field) -> Option<Inference> {
     field
         .collect_all_drafts_cells_by_gn()
         .iter()
@@ -318,12 +351,6 @@ fn search_only_one_right_in_grid<'a>(field: &'a Field) -> Option<Inference> {
                 conclusion_remove_drafts: make_removing_drafts_when_set_value(field, ret),
             })
         })
-}
-
-// 高级排除法1
-// 当一宫内的某种草稿值当且仅当在同一行/列时（其他行列不能有），可以排除行/列内其余格子的该草稿值
-pub fn search_locked_candidates_in_row_by_grid<'a>(field: &'a Field) -> Option<Inference> {
-    None
 }
 // pub fn inference_only_one_right_ex1(&self) -> Option<Inference> {
 //     let mut ret = Inference {

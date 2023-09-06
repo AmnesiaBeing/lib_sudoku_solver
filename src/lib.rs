@@ -4,7 +4,7 @@ pub mod types;
 #[cfg(test)]
 mod tests {
     use crate::{
-        inferences::{InferenceType, Inferences},
+        inferences::Inferences,
         types::Field,
     };
 
