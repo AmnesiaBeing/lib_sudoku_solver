@@ -322,28 +322,34 @@ fn search_only_one_right_in_grid<'a>(field: &'a Field) -> Option<Inference> {
 
 // 当一宫内的某种草稿值当且仅当在同一行/列时，可以排除行/列内其余格子的该草稿值
 pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) {
-    let vg0 = &field.collect_all_drafts_cells_by_gn()[0];
-    let tmp = CellValue::vec_for_iter()
+    let ret = field
+        .collect_all_drafts_cells_by_gn()
         .iter()
-        .filter_map(|&v| {
-            let tmp: Vec<&Cell> = vg0
+        .find_map(|vg| {
+            CellValue::vec_for_iter()
                 .iter()
-                .filter_map(|&p| {
-                    if p.drafts.is_contain(v) {
-                        Some(p)
-                    } else {
-                        None
-                    }
+                .filter_map(|&v| {
+                    let tmp: Vec<&Cell> = vg
+                        .iter()
+                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
+                        .collect::<Vec<&Cell>>();
+                    (tmp.len() != 0).then_some((v, tmp))
                 })
-                .collect();
-            if tmp.len() != 0 {
-                Some((v, tmp))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<(CellValue, Vec<&Cell>)>>();
-    println!("{:?}", tmp);
+                .find(|(v, vp)| {
+                    let vr = field.collect_all_drafts_cells_in_r(vp[0].rc.r);
+                    vp.iter()
+                        .find(|&p| {
+                            (p.rc.r != vp[0].rc.r) && {
+                                vr.iter()
+                                    .find(|&p_iter| {
+                                        p_iter.gn.g != p.gn.g && p_iter.drafts.is_contain(*v)
+                                    }).is_some()
+                            }
+                        })
+                        .is_none()
+                })
+        });
+    println!("{:?}", ret);
 }
 // pub fn inference_only_one_right_ex1(&self) -> Option<Inference> {
 //     let mut ret = Inference {
