@@ -35,4 +35,15 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn search_locked_candidates_in_row_col_by_grid_test(){
+        let mut field = Field::initial_by_string(
+            &"070009800008002006906100000600000150030801020092000008000003701800600300001900060"
+                .to_string(),
+        )
+        .unwrap();
+        field.print();
+        crate::inferences::search_locked_candidates_in_row_col_by_grid(&field);
+    }
 }
