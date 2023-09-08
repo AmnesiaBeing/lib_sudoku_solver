@@ -1,14 +1,13 @@
-use std::vec;
+use std::{fmt::write, vec};
 
 use crate::types::{Cell, CellStatus, CellValue, Field};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct CellAndValue<'a> {
     cell: &'a Cell,
     value: CellValue,
 }
 
-#[derive(Debug)]
 pub struct Inference<'a> {
     inference_type: InferenceType,
     condition: Vec<CellAndValue<'a>>,
@@ -47,6 +46,7 @@ impl Inferences {
             search_only_one_right_in_row,
             search_only_one_right_in_col,
             search_only_one_right_in_grid,
+            search_locked_candidates_in_row_col_by_grid,
         ];
         vec_fn_inference.iter().find_map(|&fn_t| fn_t(field))
     }
@@ -78,63 +78,187 @@ impl Inferences {
     }
 }
 
-// impl std::fmt::Display for Inference {
-//     /// # 实现调试接口
-//     /// R行
-//     /// C列
-//     /// G宫
-//     /// N宫内序号
-//     /// D草稿
-//     /// V值
-//     /// -去除
-//     /// +设置值
-//     /// &条件与、结论与
-//     /// ^因为
-//     /// =推导
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         if self.condition.len() != 0 {
-//             write!(f, "因为 ")?;
-//             for (index, c) in self.condition.iter().enumerate() {
-//                 write!(
-//                     f,
-//                     "R{}C{}V{}",
-//                     c.cell.rc.r,
-//                     c.cell.rc.c,
-//                     (c.value.unwrap().to_index().unwrap() + 1)
-//                 )?;
-//                 if index < self.condition.len() - 1 {
-//                     write!(f, " 和 ")?;
-//                 }
-//             }
-//         }
-//         if self.conclusion.len() != 0 {
-//             write!(f, " ，推导出： ")?;
-//             for (index, c) in self.conclusion.iter().enumerate() {
-//                 if c.situation == Situation::SetValue {
-//                     write!(
-//                         f,
-//                         "R{}C{}V{}",
-//                         c.cell.rc.r,
-//                         c.cell.rc.c,
-//                         (c.value.unwrap().to_index().unwrap() + 1)
-//                     )?;
-//                 } else if c.situation == Situation::RemoveDrafts {
-//                     write!(
-//                         f,
-//                         "R{}C{}-D{}",
-//                         c.cell.rc.r,
-//                         c.cell.rc.c,
-//                         (c.value.unwrap().to_index().unwrap() + 1)
-//                     )?;
-//                 }
-//                 if index < self.conclusion.len() - 1 {
-//                     write!(f, " 和 ")?;
-//                 }
-//             }
-//         }
-//         write!(f, "")
-//     }
-// }
+impl std::fmt::Debug for CellAndValue<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.cell)
+    }
+}
+
+impl std::fmt::Debug for Inference<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "因为 ")?;
+
+        match self.inference_type {
+            InferenceType::OnlyOneLeft => {
+                write!(
+                    f,
+                    "{:?} 的 {:?} 在格内唯一",
+                    self.condition[0].cell.rc, self.condition[0].value,
+                )?;
+
+                write!(f, "，推导出： ")?;
+
+                write!(
+                    f,
+                    "{:?} 填写 {:?} ",
+                    self.condition[0].cell.rc, self.condition[0].value
+                )?;
+
+                if self.conclusion_remove_drafts.is_some() {
+                    write!(f, "，且移除 ")?;
+                    self.conclusion_remove_drafts
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .for_each(|&cv| {
+                            write!(f, "{:?} ", cv.cell.rc).unwrap();
+                        });
+                    write!(f, "的 {:?}", self.condition[0].value)?;
+                }
+                write!(f, "。")?;
+            }
+            InferenceType::OnlyOneRightInRow => {
+                write!(
+                    f,
+                    "{:?} 的 {:?} 在行内唯一",
+                    self.condition[0].cell.rc, self.condition[0].value
+                )?;
+
+                write!(f, "，推导出： ")?;
+
+                write!(
+                    f,
+                    "{:?} 填写 {:?} ",
+                    self.condition[0].cell.rc, self.condition[0].value
+                )?;
+
+                if self.conclusion_remove_drafts.is_some() {
+                    write!(f, "，且移除 ")?;
+                    self.conclusion_remove_drafts
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .for_each(|&cv| {
+                            write!(f, "{:?} ", cv.cell.rc).unwrap();
+                        });
+                    write!(f, "的 {:?}", self.condition[0].value)?;
+                }
+                write!(f, "。")?;
+            }
+            InferenceType::OnlyOneRightInCol => {
+                write!(
+                    f,
+                    "{:?} 的 {:?} 在列内唯一",
+                    self.condition[0].cell.rc, self.condition[0].value
+                )?;
+
+                write!(f, "，推导出： ")?;
+
+                write!(
+                    f,
+                    "{:?} 填写 {:?} ",
+                    self.condition[0].cell.rc, self.condition[0].value
+                )?;
+
+                if self.conclusion_remove_drafts.is_some() {
+                    write!(f, "，且移除 ")?;
+                    self.conclusion_remove_drafts
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .for_each(|&cv| {
+                            write!(f, "{:?} ", cv.cell.rc).unwrap();
+                        });
+                    write!(f, "的 {:?}", self.condition[0].value)?;
+                }
+                write!(f, "。")?;
+            }
+            InferenceType::OnlyOneRightInGrid => {
+                write!(
+                    f,
+                    "{:?} 的 {:?} 在宫内唯一",
+                    self.condition[0].cell.gn, self.condition[0].value
+                )?;
+
+                write!(f, "，推导出： ")?;
+
+                write!(
+                    f,
+                    "{:?} 填写 {:?} ",
+                    self.condition[0].cell.gn, self.condition[0].value
+                )?;
+
+                if self.conclusion_remove_drafts.is_some() {
+                    write!(f, "，且移除 ")?;
+                    self.conclusion_remove_drafts
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .for_each(|&cv| {
+                            write!(f, "{:?} ", cv.cell.rc).unwrap();
+                        });
+                    write!(f, "的 {:?}", self.condition[0].value)?;
+                }
+                write!(f, "。")?;
+            }
+            InferenceType::LockedCandidatesInRowByGrid => {
+                self.condition.iter().for_each(|&cv| {
+                    write!(f, "{:?} ", cv.cell.rc).unwrap();
+                });
+                write!(
+                    f,
+                    "的 {:?} 在宫 G{:?} 内，只在 R{:?} 中存在，推导出： ",
+                    self.condition[0].value,
+                    self.condition[0].cell.gn.g + 1,
+                    self.condition[0].cell.rc.r + 1
+                )?;
+
+                self.conclusion_remove_drafts
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&p| {
+                        write!(f, "{:?} ", p.cell.rc).unwrap();
+                    });
+                write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
+            }
+            InferenceType::LockedCandidatesInColByGrid => {
+                self.condition.iter().for_each(|&cv| {
+                    write!(f, "{:?} ", cv.cell.gn,).unwrap();
+                });
+                write!(
+                    f,
+                    "的 {:?} 在宫 G{:?} 内，只在 C{:?} 中存在，推导出： ",
+                    self.condition[0].value,
+                    self.condition[0].cell.gn.g + 1,
+                    self.condition[0].cell.rc.c + 1
+                )?;
+
+                self.conclusion_remove_drafts
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&p| {
+                        write!(f, "{:?} ", p.cell.rc).unwrap();
+                    });
+                write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
+            }
+            InferenceType::LockedCandidatesInGridByRow => todo!(),
+            InferenceType::LockedCandidatesInGridByCol => todo!(),
+            InferenceType::NakedPairInRow => todo!(),
+            InferenceType::NakedPairInCol => todo!(),
+            InferenceType::NakedPairInGrid => todo!(),
+            InferenceType::NakedTripleInRow => todo!(),
+            InferenceType::NakedTripleInCol => todo!(),
+            InferenceType::NakedTripleInGrid => todo!(),
+            InferenceType::NakedQuadrupleInRow => todo!(),
+            InferenceType::NakedQuadrupleInCol => todo!(),
+            InferenceType::NakedQuadrupleInGrid => todo!(),
+        }
+
+        write!(f, "")
+    }
+}
 
 // 当某个格子设置某个值的时候，将同行列宫的该值的草稿值移除，输入值在vec_set_value.cells内，且value唯一
 fn make_removing_drafts_when_set_value<'a>(
@@ -321,14 +445,13 @@ fn search_only_one_right_in_grid<'a>(field: &'a Field) -> Option<Inference> {
 }
 
 // 当一宫内的某种草稿值当且仅当在同一行/列时，可以排除行/列内其余格子的该草稿值
-pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) {
-    let ret = field
+pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) -> Option<Inference> {
+    field
         .collect_all_drafts_cells_by_gn()
         .iter()
         .find_map(|vg| {
             CellValue::vec_for_iter()
                 .iter()
-                .inspect(|&v| println!("filter_map:{:?},{:?}", v, vg))
                 .filter_map(|&v| {
                     let tmp: Vec<&Cell> = vg
                         .iter()
@@ -336,152 +459,69 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) {
                         .collect::<Vec<&Cell>>();
                     (tmp.len() != 0).then_some((v, tmp))
                 })
-                .inspect(|v| println!("find:v:{:},{:#?}", v.0, v.1))
-                .find(|(v, vp)| {
-                    let vr = field.collect_all_drafts_cells_in_r(vp[0].rc.r);
-                    vp.iter()
-                        .inspect(|&p| println!("find2:{:?}", p))
-                        .find(|&p| {
-                            (p.rc.r != vp[0].rc.r) && {
-                                let tt = vr.iter().inspect(|&v| print!("find3:{:?}", v)).find(
-                                    |&p_iter| p_iter.gn.g != p.gn.g && p_iter.drafts.is_contain(*v),
-                                );
-                                println!("=>{:?}", tt.is_some());
-                                tt.is_some()
-                            }
-                        })
-                        .is_none()
+                .find_map(|(v, vp)| {
+                    {
+                        let vr = field.collect_all_drafts_cells_in_r(vp[0].rc.r);
+                        // 条件1：该宫内其他行没有这个值
+                        let ret1 = !vp.iter().any(|&p| (p.rc.r != vp[0].rc.r));
+                        // 条件2：宫外该行内有这个值
+                        let ret2 = vr
+                            .iter()
+                            .filter_map(|&vr_p_iter| {
+                                ((vr_p_iter.gn.g != vp[0].gn.g) && vr_p_iter.drafts.is_contain(v))
+                                    .then_some(vr_p_iter)
+                            })
+                            .collect::<Vec<&Cell>>();
+                        if ret1 && ret2.len() != 0 {
+                            Some(Inference {
+                                inference_type: InferenceType::LockedCandidatesInRowByGrid,
+                                condition: vp
+                                    .iter()
+                                    .map(|&p| CellAndValue { cell: p, value: v })
+                                    .collect::<Vec<CellAndValue>>(),
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: Some(
+                                    ret2.iter()
+                                        .map(|&p| CellAndValue { cell: p, value: v })
+                                        .collect::<Vec<CellAndValue>>(),
+                                ),
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    .or({
+                        {
+                            let vc = field.collect_all_drafts_cells_in_c(vp[0].rc.c);
+                            // 条件1：该宫内其他列没有这个值
+                            let ret1 = !vp.iter().any(|&p| (p.rc.c != vp[0].rc.c));
+                            // 条件2：宫外该列内有这个值
+                            let ret2 = vc
+                                .iter()
+                                .filter_map(|&vc_p_iter| {
+                                    ((vc_p_iter.gn.g != vp[0].gn.g)
+                                        && vc_p_iter.drafts.is_contain(v))
+                                    .then_some(vc_p_iter)
+                                })
+                                .collect::<Vec<&Cell>>();
+                            (ret1 && ret2.len() != 0).then_some(Inference {
+                                inference_type: InferenceType::LockedCandidatesInColByGrid,
+                                condition: vp
+                                    .iter()
+                                    .map(|&p| CellAndValue { cell: p, value: v })
+                                    .collect::<Vec<CellAndValue>>(),
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: Some(
+                                    ret2.iter()
+                                        .map(|&p| CellAndValue { cell: p, value: v })
+                                        .collect::<Vec<CellAndValue>>(),
+                                ),
+                            })
+                        }
+                    })
                 })
-        });
-    println!("{:?}", ret);
+        })
 }
-// pub fn inference_only_one_right_ex1(&self) -> Option<Inference> {
-//     let mut ret = Inference {
-//         condition: vec![],
-//         conclusion: vec![],
-//     };
-//     for g_iter in 0..9 {
-//         'v_iter: for v_iter in CellValue::vec_for_iter() {
-//             let mut same_p_set: Vec<&Cell> = vec![];
-//             'n_iter: for n_iter in 0..9 {
-//                 let p = self.get_cell_ref_by_gn(GNCoords {
-//                     g: g_iter,
-//                     n: n_iter,
-//                 });
-//                 if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
-//                     if p.value == v_iter {
-//                         continue 'v_iter;
-//                     }
-//                     continue 'n_iter;
-//                 } else if p.status == CellStatus::DRAFT {
-//                     if p.drafts.is_contain(v_iter) {
-//                         same_p_set.push(p);
-//                     }
-//                 }
-//             }
-//             if same_p_set.len() < 2 {
-//                 continue 'v_iter;
-//             } else {
-//                 // 判断是否在同一行
-//                 {
-//                     let tmp_r = same_p_set[0].rc.r;
-//                     let mut flag = true;
-//                     for i in 1..same_p_set.len() {
-//                         if same_p_set[i].rc.r != tmp_r {
-//                             flag = false;
-//                             break;
-//                         }
-//                     }
-//                     if flag {
-//                         // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
-//                         // 寻找相同行的值是否存在该草稿数，需要排除相同宫的值
-//                         let mut tmp_ret: Vec<&Cell> = vec![];
-//                         for c_iter in 0..9 {
-//                             let p_iter = self.get_cell_ref_by_rc(RCCoords {
-//                                 r: tmp_r,
-//                                 c: c_iter,
-//                             });
-//                             if p_iter.gn.g != g_iter
-//                                 && p_iter.status == CellStatus::DRAFT
-//                                 && p_iter.drafts.is_contain(v_iter)
-//                             {
-//                                 tmp_ret.push(p_iter);
-//                             }
-//                         }
-//                         if tmp_ret.len() != 0 {
-//                             for item in same_p_set.iter() {
-//                                 ret.condition.push(Operator {
-//                                     situation: Situation::LockedCandidatesInGridByRow,
-//                                     cell: item,
-//                                     value: Some(v_iter),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             for item in tmp_ret.iter() {
-//                                 ret.conclusion.push(Operator {
-//                                     situation: Situation::RemoveDrafts,
-//                                     cell: item,
-//                                     value: Some(v_iter),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             return Some(ret);
-//                         }
-//                     }
-//                 }
-//                 // 判断是否在同一列
-//                 {
-//                     let tmp_c = same_p_set[0].rc.c;
-//                     let mut flag = true;
-//                     for i in 1..same_p_set.len() {
-//                         if same_p_set[i].rc.c != tmp_c {
-//                             flag = false;
-//                             break;
-//                         }
-//                     }
-//                     if flag {
-//                         // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
-//                         // 寻找相同行的值是否存在该草稿数，需要排除相同宫的值
-//                         let mut tmp_ret: Vec<&Cell> = vec![];
-//                         for r_iter in 0..9 {
-//                             let p_iter = self.get_cell_ref_by_rc(RCCoords {
-//                                 r: r_iter,
-//                                 c: tmp_c,
-//                             });
-//                             if p_iter.gn.g != g_iter
-//                                 && p_iter.status == CellStatus::DRAFT
-//                                 && p_iter.drafts.is_contain(v_iter)
-//                             {
-//                                 tmp_ret.push(p_iter);
-//                             }
-//                         }
-//                         if tmp_ret.len() != 0 {
-//                             for item in same_p_set.iter() {
-//                                 ret.condition.push(Operator {
-//                                     situation: Situation::LockedCandidatesInGridByCol,
-//                                     cell: item,
-//                                     value: Some(item.value),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             for item in tmp_ret.iter() {
-//                                 ret.conclusion.push(Operator {
-//                                     situation: Situation::RemoveDrafts,
-//                                     cell: item,
-//                                     value: Some(item.value),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             return Some(ret);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     None
-// }
 
 // // 高级排除法2
 // // 当一行列的草稿数正好在1宫时，排除该宫其他草稿数

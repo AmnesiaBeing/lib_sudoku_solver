@@ -1,12 +1,12 @@
 use std::{mem::MaybeUninit, ptr};
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,
     pub c: usize,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct GNCoords {
     pub g: usize,
     pub n: usize,
@@ -166,32 +166,34 @@ pub struct Cell {
     pub value: CellValue,
 }
 
-impl std::fmt::Display for CellValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_index().unwrap() + 1)
-    }
-}
-
 impl std::fmt::Debug for Drafts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..9 {
             if self.drafts[i] {
-                write!(f, "{}", i + 1);
+                write!(f, "{}", i + 1)?;
             }
         }
         write!(f, "")
     }
 }
 
+impl std::fmt::Debug for RCCoords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "R{}C{}", self.r + 1, self.c + 1)
+    }
+}
+
+impl std::fmt::Debug for GNCoords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "G{}N{}", self.g + 1, self.n + 1)
+    }
+}
+
 impl std::fmt::Debug for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Cell:R{}C{},G{}N{},",
-            self.rc.r, self.rc.c, self.gn.g, self.gn.n
-        );
+        write!(f, "{:?}{:?}", self.rc, self.gn,)?;
         match self.status {
-            CellStatus::FIXED | CellStatus::SOLVE => write!(f, "V{};", self.value),
+            CellStatus::FIXED | CellStatus::SOLVE => write!(f, "{:?};", self.value),
             CellStatus::DRAFT => {
                 write!(f, "D{:?};", self.drafts)
             }
