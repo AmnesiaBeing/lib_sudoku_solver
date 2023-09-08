@@ -30,7 +30,7 @@ mod tests {
                     field = Inferences::apply(&field, inference);
                     field.print();
                     if field.check_if_finish() {
-                        println!("推倒完毕!");
+                        println!("推导完毕!");
                         break;
                     }
                 }
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn search_locked_candidates_in_row_col_by_grid_test() {
-        let mut field = Field::initial_by_string(
+        let field = Field::initial_by_string(
             &"060000000100000054000000700003000001008010070051000000080900000007100000010000000"
                 .to_string(),
         )

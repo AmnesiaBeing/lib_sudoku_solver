@@ -1,5 +1,3 @@
-use std::{fmt::write, vec};
-
 use crate::types::{Cell, CellStatus, CellValue, Field};
 
 #[derive(Copy, Clone)]
