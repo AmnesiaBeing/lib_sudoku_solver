@@ -328,6 +328,7 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) {
         .find_map(|vg| {
             CellValue::vec_for_iter()
                 .iter()
+                .inspect(|&v| println!("filter_map:{:?},{:?}", v, vg))
                 .filter_map(|&v| {
                     let tmp: Vec<&Cell> = vg
                         .iter()
@@ -335,15 +336,18 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) {
                         .collect::<Vec<&Cell>>();
                     (tmp.len() != 0).then_some((v, tmp))
                 })
+                .inspect(|v| println!("find:v:{:},{:#?}", v.0, v.1))
                 .find(|(v, vp)| {
                     let vr = field.collect_all_drafts_cells_in_r(vp[0].rc.r);
                     vp.iter()
+                        .inspect(|&p| println!("find2:{:?}", p))
                         .find(|&p| {
                             (p.rc.r != vp[0].rc.r) && {
-                                vr.iter()
-                                    .find(|&p_iter| {
-                                        p_iter.gn.g != p.gn.g && p_iter.drafts.is_contain(*v)
-                                    }).is_some()
+                                let tt = vr.iter().inspect(|&v| print!("find3:{:?}", v)).find(
+                                    |&p_iter| p_iter.gn.g != p.gn.g && p_iter.drafts.is_contain(*v),
+                                );
+                                println!("=>{:?}", tt.is_some());
+                                tt.is_some()
                             }
                         })
                         .is_none()

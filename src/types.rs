@@ -30,7 +30,7 @@ impl GNCoords {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Drafts {
     drafts: [bool; 9],
 }
@@ -71,12 +71,8 @@ impl Drafts {
         self.drafts[v.to_index().unwrap()]
     }
 
-    pub fn find_value(&self, v: CellValue) -> Option<()> {
-        if self.is_contain(v) {
-            Some(())
-        } else {
-            None
-        }
+    pub fn find_value(&self, v: CellValue) -> Option<CellValue> {
+        self.is_contain(v).then_some(v)
     }
 
     pub fn to_vec(&self) -> Vec<CellValue> {
@@ -161,13 +157,46 @@ impl CellValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Cell {
     pub rc: RCCoords,
     pub gn: GNCoords,
     pub status: CellStatus,
     pub drafts: Drafts,
     pub value: CellValue,
+}
+
+impl std::fmt::Display for CellValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_index().unwrap() + 1)
+    }
+}
+
+impl std::fmt::Debug for Drafts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for i in 0..9 {
+            if self.drafts[i] {
+                write!(f, "{}", i + 1);
+            }
+        }
+        write!(f, "")
+    }
+}
+
+impl std::fmt::Debug for Cell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Cell:R{}C{},G{}N{},",
+            self.rc.r, self.rc.c, self.gn.g, self.gn.n
+        );
+        match self.status {
+            CellStatus::FIXED | CellStatus::SOLVE => write!(f, "V{};", self.value),
+            CellStatus::DRAFT => {
+                write!(f, "D{:?};", self.drafts)
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
