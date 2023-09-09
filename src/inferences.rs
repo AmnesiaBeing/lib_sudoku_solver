@@ -45,6 +45,7 @@ impl Inferences {
             search_only_one_right_in_col,
             search_only_one_right_in_grid,
             search_locked_candidates_in_row_col_by_grid,
+            search_locked_candidates_in_grid_by_row_col,
         ];
         vec_fn_inference.iter().find_map(|&fn_t| fn_t(field))
     }
@@ -521,8 +522,85 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) -> Opti
         })
 }
 
-// // 高级排除法2
-// // 当一行列的草稿数正好在1宫时，排除该宫其他草稿数
+// 当一行/列的草稿数正好在一宫时，排除该宫的其他草稿数
+fn search_locked_candidates_in_grid_by_row_col<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells_by_rc()
+        .iter()
+        .find_map(|vr| {
+            CellValue::vec_for_iter()
+                .iter()
+                .filter_map(|&v| {
+                    let tmp: Vec<&Cell> = vr
+                        .iter()
+                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
+                        .collect::<Vec<&Cell>>();
+                    (tmp.len() != 0).then_some((v, tmp))
+                })
+                .find_map(|(v, vp)| {
+                    {
+                        let vg = field.collect_all_drafts_cells_in_g(vp[0].gn.g);
+                        // 条件1：该宫内其他行没有这个值
+                        let ret1 = !vp.iter().any(|&p| (p.rc.r != vp[0].rc.r));
+                        // 条件2：宫外该行内有这个值
+                        let ret2 = vg
+                            .iter()
+                            .filter_map(|&vr_p_iter| {
+                                ((vr_p_iter.gn.g != vp[0].gn.g) && vr_p_iter.drafts.is_contain(v))
+                                    .then_some(vr_p_iter)
+                            })
+                            .collect::<Vec<&Cell>>();
+                        if ret1 && ret2.len() != 0 {
+                            Some(Inference {
+                                inference_type: InferenceType::LockedCandidatesInRowByGrid,
+                                condition: vp
+                                    .iter()
+                                    .map(|&p| CellAndValue { cell: p, value: v })
+                                    .collect::<Vec<CellAndValue>>(),
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: Some(
+                                    ret2.iter()
+                                        .map(|&p| CellAndValue { cell: p, value: v })
+                                        .collect::<Vec<CellAndValue>>(),
+                                ),
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    .or({
+                        {
+                            let vc = field.collect_all_drafts_cells_in_c(vp[0].rc.c);
+                            // 条件1：该宫内其他列没有这个值
+                            let ret1 = !vp.iter().any(|&p| (p.rc.c != vp[0].rc.c));
+                            // 条件2：宫外该列内有这个值
+                            let ret2 = vc
+                                .iter()
+                                .filter_map(|&vc_p_iter| {
+                                    ((vc_p_iter.gn.g != vp[0].gn.g)
+                                        && vc_p_iter.drafts.is_contain(v))
+                                    .then_some(vc_p_iter)
+                                })
+                                .collect::<Vec<&Cell>>();
+                            (ret1 && ret2.len() != 0).then_some(Inference {
+                                inference_type: InferenceType::LockedCandidatesInColByGrid,
+                                condition: vp
+                                    .iter()
+                                    .map(|&p| CellAndValue { cell: p, value: v })
+                                    .collect::<Vec<CellAndValue>>(),
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: Some(
+                                    ret2.iter()
+                                        .map(|&p| CellAndValue { cell: p, value: v })
+                                        .collect::<Vec<CellAndValue>>(),
+                                ),
+                            })
+                        }
+                    })
+                })
+        })
+    None
+}
 // pub fn inference_only_one_right_ex2(&self) -> Option<Inference> {
 //     let mut ret = Inference {
 //         condition: vec![],
