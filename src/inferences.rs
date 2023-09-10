@@ -45,7 +45,8 @@ impl Inferences {
             search_only_one_right_in_col,
             search_only_one_right_in_grid,
             search_locked_candidates_in_row_col_by_grid,
-            search_locked_candidates_in_grid_by_row_col,
+            search_locked_candidates_in_grid_by_row,
+            search_locked_candidates_in_grid_by_col,
         ];
         vec_fn_inference.iter().find_map(|&fn_t| fn_t(field))
     }
@@ -242,8 +243,48 @@ impl std::fmt::Debug for Inference<'_> {
                     });
                 write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
             }
-            InferenceType::LockedCandidatesInGridByRow => todo!(),
-            InferenceType::LockedCandidatesInGridByCol => todo!(),
+            InferenceType::LockedCandidatesInGridByRow => {
+                self.condition.iter().for_each(|&cv| {
+                    write!(f, "{:?} ", cv.cell.rc).unwrap();
+                });
+                write!(
+                    f,
+                    "的 {:?} 在 R{:?} 内，只在宫 G{:?} 中存在，推导出： ",
+                    self.condition[0].value,
+                    self.condition[0].cell.rc.r + 1,
+                    self.condition[0].cell.gn.g + 1
+                )?;
+
+                self.conclusion_remove_drafts
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&p| {
+                        write!(f, "{:?} ", p.cell.gn).unwrap();
+                    });
+                write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
+            },
+            InferenceType::LockedCandidatesInGridByCol => {
+                self.condition.iter().for_each(|&cv| {
+                    write!(f, "{:?} ", cv.cell.rc).unwrap();
+                });
+                write!(
+                    f,
+                    "的 {:?} 在 C{:?} 内，只在宫 G{:?} 中存在，推导出： ",
+                    self.condition[0].value,
+                    self.condition[0].cell.rc.c + 1,
+                    self.condition[0].cell.gn.g + 1
+                )?;
+
+                self.conclusion_remove_drafts
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .for_each(|&p| {
+                        write!(f, "{:?} ", p.cell.gn).unwrap();
+                    });
+                write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
+            },
             InferenceType::NakedPairInRow => todo!(),
             InferenceType::NakedPairInCol => todo!(),
             InferenceType::NakedPairInGrid => todo!(),
@@ -522,8 +563,8 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) -> Opti
         })
 }
 
-// 当一行/列的草稿数正好在一宫时，排除该宫的其他草稿数
-fn search_locked_candidates_in_grid_by_row_col<'a>(field: &'a Field) -> Option<Inference> {
+// 当一行的草稿数正好在一宫时，排除该宫的其他草稿数
+fn search_locked_candidates_in_grid_by_row<'a>(field: &'a Field) -> Option<Inference> {
     field
         .collect_all_drafts_cells_by_rc()
         .iter()
@@ -540,19 +581,19 @@ fn search_locked_candidates_in_grid_by_row_col<'a>(field: &'a Field) -> Option<I
                 .find_map(|(v, vp)| {
                     {
                         let vg = field.collect_all_drafts_cells_in_g(vp[0].gn.g);
-                        // 条件1：该宫内其他行没有这个值
-                        let ret1 = !vp.iter().any(|&p| (p.rc.r != vp[0].rc.r));
-                        // 条件2：宫外该行内有这个值
+                        // 条件1：该行内的值都在同一个宫内
+                        let ret1 = !vp.iter().any(|&p| (p.gn.g != vp[0].gn.g));
+                        // 条件2：第一个值所在的宫，在其他行内有值
                         let ret2 = vg
                             .iter()
                             .filter_map(|&vr_p_iter| {
-                                ((vr_p_iter.gn.g != vp[0].gn.g) && vr_p_iter.drafts.is_contain(v))
+                                ((vr_p_iter.rc.r != vp[0].rc.r) && vr_p_iter.drafts.is_contain(v))
                                     .then_some(vr_p_iter)
                             })
                             .collect::<Vec<&Cell>>();
                         if ret1 && ret2.len() != 0 {
                             Some(Inference {
-                                inference_type: InferenceType::LockedCandidatesInRowByGrid,
+                                inference_type: InferenceType::LockedCandidatesInGridByRow,
                                 condition: vp
                                     .iter()
                                     .map(|&p| CellAndValue { cell: p, value: v })
@@ -568,22 +609,41 @@ fn search_locked_candidates_in_grid_by_row_col<'a>(field: &'a Field) -> Option<I
                             None
                         }
                     }
-                    .or({
-                        {
-                            let vc = field.collect_all_drafts_cells_in_c(vp[0].rc.c);
-                            // 条件1：该宫内其他列没有这个值
-                            let ret1 = !vp.iter().any(|&p| (p.rc.c != vp[0].rc.c));
-                            // 条件2：宫外该列内有这个值
-                            let ret2 = vc
-                                .iter()
-                                .filter_map(|&vc_p_iter| {
-                                    ((vc_p_iter.gn.g != vp[0].gn.g)
-                                        && vc_p_iter.drafts.is_contain(v))
-                                    .then_some(vc_p_iter)
-                                })
-                                .collect::<Vec<&Cell>>();
-                            (ret1 && ret2.len() != 0).then_some(Inference {
-                                inference_type: InferenceType::LockedCandidatesInColByGrid,
+                })
+        })
+}
+
+// 当一列的草稿数正好在一宫时，排除该宫的其他草稿数
+fn search_locked_candidates_in_grid_by_col<'a>(field: &'a Field) -> Option<Inference> {
+    field
+        .collect_all_drafts_cells_by_cr()
+        .iter()
+        .find_map(|vc| {
+            CellValue::vec_for_iter()
+                .iter()
+                .filter_map(|&v| {
+                    let tmp: Vec<&Cell> = vc
+                        .iter()
+                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
+                        .collect::<Vec<&Cell>>();
+                    (tmp.len() != 0).then_some((v, tmp))
+                })
+                .find_map(|(v, vp)| {
+                    {
+                        let vg = field.collect_all_drafts_cells_in_g(vp[0].gn.g);
+                        // 条件1：该列内的值都在同一个宫内
+                        let ret1 = !vp.iter().any(|&p| (p.gn.g != vp[0].gn.g));
+                        // 条件2：第一个值所在的宫，在其他列内有值
+                        let ret2 = vg
+                            .iter()
+                            .filter_map(|&vr_p_iter| {
+                                ((vr_p_iter.rc.c != vp[0].rc.c) && vr_p_iter.drafts.is_contain(v))
+                                    .then_some(vr_p_iter)
+                            })
+                            .collect::<Vec<&Cell>>();
+                        if ret1 && ret2.len() != 0 {
+                            Some(Inference {
+                                inference_type: InferenceType::LockedCandidatesInGridByCol,
                                 condition: vp
                                     .iter()
                                     .map(|&p| CellAndValue { cell: p, value: v })
@@ -595,12 +655,14 @@ fn search_locked_candidates_in_grid_by_row_col<'a>(field: &'a Field) -> Option<I
                                         .collect::<Vec<CellAndValue>>(),
                                 ),
                             })
+                        } else {
+                            None
                         }
-                    })
+                    }
                 })
         })
-    None
 }
+
 // pub fn inference_only_one_right_ex2(&self) -> Option<Inference> {
 //     let mut ret = Inference {
 //         condition: vec![],
