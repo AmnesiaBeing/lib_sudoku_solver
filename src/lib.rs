@@ -55,4 +55,18 @@ mod tests {
             crate::inferences::search_locked_candidates_in_row_col_by_grid(&field)
         );
     }
+
+    #[test]
+    fn search_naked_pair_in_row_test() {
+        let field = Field::initial_by_string(
+            &"615800790290600015040000260000080000730512046000090000080000030900008071071060582"
+                .to_string(),
+        )
+        .unwrap();
+        field.print();
+        println!(
+            "{:?}",
+            crate::inferences::search_naked_pair_in_row(&field)
+        );
+    }
 }

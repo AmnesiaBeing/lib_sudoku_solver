@@ -84,6 +84,16 @@ impl Drafts {
         }
         ret
     }
+
+    pub fn delta_to(&self, other: Drafts) -> usize {
+        let mut ret = 0;
+        (0..9).for_each(|i| {
+            if self.drafts[i] != other.drafts[i] {
+                ret += 1;
+            }
+        });
+        ret
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]

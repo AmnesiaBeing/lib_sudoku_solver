@@ -263,7 +263,7 @@ impl std::fmt::Debug for Inference<'_> {
                         write!(f, "{:?} ", p.cell.gn).unwrap();
                     });
                 write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
-            },
+            }
             InferenceType::LockedCandidatesInGridByCol => {
                 self.condition.iter().for_each(|&cv| {
                     write!(f, "{:?} ", cv.cell.rc).unwrap();
@@ -284,7 +284,7 @@ impl std::fmt::Debug for Inference<'_> {
                         write!(f, "{:?} ", p.cell.gn).unwrap();
                     });
                 write!(f, "不能填写 {:?} ，需要移除。", self.condition[0].value)?;
-            },
+            }
             InferenceType::NakedPairInRow => todo!(),
             InferenceType::NakedPairInCol => todo!(),
             InferenceType::NakedPairInGrid => todo!(),
@@ -564,7 +564,7 @@ pub fn search_locked_candidates_in_row_col_by_grid<'a>(field: &'a Field) -> Opti
 }
 
 // 当一行的草稿数正好在一宫时，排除该宫的其他草稿数
-fn search_locked_candidates_in_grid_by_row<'a>(field: &'a Field) -> Option<Inference> {
+pub fn search_locked_candidates_in_grid_by_row<'a>(field: &'a Field) -> Option<Inference> {
     field
         .collect_all_drafts_cells_by_rc()
         .iter()
@@ -614,7 +614,7 @@ fn search_locked_candidates_in_grid_by_row<'a>(field: &'a Field) -> Option<Infer
 }
 
 // 当一列的草稿数正好在一宫时，排除该宫的其他草稿数
-fn search_locked_candidates_in_grid_by_col<'a>(field: &'a Field) -> Option<Inference> {
+pub fn search_locked_candidates_in_grid_by_col<'a>(field: &'a Field) -> Option<Inference> {
     field
         .collect_all_drafts_cells_by_cr()
         .iter()
@@ -663,216 +663,41 @@ fn search_locked_candidates_in_grid_by_col<'a>(field: &'a Field) -> Option<Infer
         })
 }
 
-// pub fn inference_only_one_right_ex2(&self) -> Option<Inference> {
-//     let mut ret = Inference {
-//         condition: vec![],
-//         conclusion: vec![],
-//     };
-//     // 按行遍历
-//     for r_iter in 0..9 {
-//         'v_iter: for v_iter in CellValue::vec_for_iter() {
-//             let mut same_p_set: Vec<&Cell> = vec![];
-//             'c_iter: for c_iter in 0..9 {
-//                 let p = self.get_cell_ref_by_rc(RCCoords {
-//                     r: r_iter,
-//                     c: c_iter,
-//                 });
-//                 if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
-//                     if p.value == v_iter {
-//                         continue 'v_iter;
-//                     }
-//                     continue 'c_iter;
-//                 } else if p.status == CellStatus::DRAFT {
-//                     if p.drafts.is_contain(v_iter) {
-//                         same_p_set.push(p);
-//                     }
-//                 }
-//             }
-//             if same_p_set.len() < 2 {
-//                 continue 'v_iter;
-//             } else {
-//                 // 判断是否在同一宫
-//                 {
-//                     let tmp_g = same_p_set[0].gn.g;
-//                     let mut flag = true;
-//                     for i in 1..same_p_set.len() {
-//                         if same_p_set[i].gn.g != tmp_g {
-//                             flag = false;
-//                             break;
-//                         }
-//                     }
-//                     if flag {
-//                         // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
-//                         // 寻找相同宫的值是否存在该草稿数，需要排除相同宫的值
-//                         let mut tmp_ret: Vec<&Cell> = vec![];
-//                         for n_iter in 0..9 {
-//                             let p_iter = self.get_cell_ref_by_gn(GNCoords {
-//                                 g: tmp_g,
-//                                 n: n_iter,
-//                             });
-//                             if p_iter.rc.r != r_iter
-//                                 && p_iter.status == CellStatus::DRAFT
-//                                 && p_iter.drafts.is_contain(v_iter)
-//                             {
-//                                 tmp_ret.push(p_iter);
-//                             }
-//                         }
-//                         if tmp_ret.len() != 0 {
-//                             for item in same_p_set.iter() {
-//                                 ret.condition.push(Operator {
-//                                     situation: Situation::LockedCandidatesInRow,
-//                                     cell: item,
-//                                     value: Some(v_iter),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             for item in tmp_ret.iter() {
-//                                 ret.conclusion.push(Operator {
-//                                     situation: Situation::RemoveDrafts,
-//                                     cell: item,
-//                                     value: Some(v_iter),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             return Some(ret);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     // 按列遍历
-//     for c_iter in 0..9 {
-//         'v_iter: for v_iter in CellValue::vec_for_iter() {
-//             let mut same_p_set: Vec<&Cell> = vec![];
-//             'r_iter: for r_iter in 0..9 {
-//                 let p = self.get_cell_ref_by_rc(RCCoords {
-//                     r: r_iter,
-//                     c: c_iter,
-//                 });
-//                 if p.status == CellStatus::FIXED || p.status == CellStatus::SOLVE {
-//                     if p.value == v_iter {
-//                         continue 'v_iter;
-//                     }
-//                     continue 'r_iter;
-//                 } else if p.status == CellStatus::DRAFT {
-//                     if p.drafts.is_contain(v_iter) {
-//                         same_p_set.push(p);
-//                     }
-//                 }
-//             }
-//             if same_p_set.len() < 2 {
-//                 continue 'v_iter;
-//             } else {
-//                 // 判断是否在同一宫
-//                 {
-//                     let tmp_g = same_p_set[0].gn.g;
-//                     let mut flag = true;
-//                     for i in 1..same_p_set.len() {
-//                         if same_p_set[i].gn.g != tmp_g {
-//                             flag = false;
-//                             break;
-//                         }
-//                     }
-//                     if flag {
-//                         // same_p_set 数组的长度必然大于2，到这里说明符合判断条件
-//                         // 寻找相同宫的值是否存在该草稿数，需要排除相同宫的值
-//                         let mut tmp_ret: Vec<&Cell> = vec![];
-//                         for n_iter in 0..9 {
-//                             let p_iter = self.get_cell_ref_by_gn(GNCoords {
-//                                 g: tmp_g,
-//                                 n: n_iter,
-//                             });
-//                             if p_iter.rc.c != c_iter
-//                                 && p_iter.status == CellStatus::DRAFT
-//                                 && p_iter.drafts.is_contain(v_iter)
-//                             {
-//                                 tmp_ret.push(p_iter);
-//                             }
-//                         }
-//                         if tmp_ret.len() != 0 {
-//                             for item in same_p_set.iter() {
-//                                 ret.condition.push(Operator {
-//                                     situation: Situation::LockedCandidatesInCol,
-//                                     cell: item,
-//                                     value: Some(item.value),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             for item in tmp_ret.iter() {
-//                                 ret.conclusion.push(Operator {
-//                                     situation: Situation::RemoveDrafts,
-//                                     cell: item,
-//                                     value: Some(item.value),
-//                                     drafts: None,
-//                                 })
-//                             }
-//                             return Some(ret);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     None
-// }
-
-// // 显性2数对排除法
-// // 在同一行/列/宫内，存在2个格子的数字数量为2且相同，则该格子为2数对，同行内其余该草稿数可以被移除
-// pub fn inference_cell_naked_pair_in_row(&self) -> Option<Inference> {
-//     for r_iter in 0..9 {
-//         let mut avail_v_set: Vec<&CellValue> = vec![];
-//     }
-//     None
-// }
-
-// /// # 数独推理过程
-// /// 1. 对每个格子判断唯一性，当只有1个候选数时，该格子必定为此数，填写该数，同时去除同一行列宫的该草稿数（唯余法）
-// /// 2. 对行列宫判断唯一性，当一个候选数在同一行列宫只有唯一选项时，填写该数，同时去除同一行列宫的该草稿数（行列宫排除法）
-// /// 3. 在某个宫内，某草稿数值占据了同一行列，可按行列方向排除其他宫内的该草稿数值（区块排除法）
-// /// 4. 在某一行列宫内，存在二数对时，其他空行内可去除这些数对（二数对排除法）
-// /// 5. 暂时先处理上述情况
-// pub fn search_one_inference(&self) -> Option<Inference> {
-//     let inferences: Vec<FnInference> = vec![
-//         Field::inference_only_one_left,
-//         Field::inference_only_one_right_in_row,
-//         Field::inference_only_one_right_in_col,
-//         Field::inference_only_one_right_in_grid,
-//         Field::inference_only_one_right_ex1,
-//         Field::inference_only_one_right_ex2,
-//         Field::inference_cell_naked_pair_in_row,
-//         // Field::inference_cell_naked_triple,
-//         // Field::inference_cell_naked_quadruple,
-//         // Field::inference_cell_hidden_pair,
-//         // Field::inference_cell_hidden_triple,
-//         // Field::inference_cell_hidden_quadruple,
-//     ];
-//     for fn_inference in inferences {
-//         let opt = fn_inference(&self);
-//         if opt.is_none() {
-//             // println!("fn_inference None");
-//             continue;
-//         }
-//         println!("{}", opt.as_ref().unwrap());
-//         return opt;
-//     }
-//     None
-// }
-
-// // 应用一个操作，为了实现“历史记录“功能，返回值是一个新的Field
-// pub fn apply_one_inference(&self, inference: Inference) -> Field {
-//     let mut ret: Field = self.clone();
-//     for op in inference.conclusion {
-//         if op.situation == Situation::SetValue {
-//             ret.get_cell_mut_by_rc(op.cell.rc).value = op.value.unwrap();
-//             ret.get_cell_mut_by_rc(op.cell.rc).status = CellStatus::SOLVE;
-//         } else if op.situation == Situation::RemoveDrafts {
-//             ret.get_cell_mut_by_rc(op.cell.rc)
-//                 .drafts
-//                 .remove_draft(op.value.unwrap());
-//         }
-//     }
-//     ret
-// }
+// 显性数对排除法，在某一行中，存在二数对时，排除该行中其余数对草稿数
+pub fn search_naked_pair_in_row<'a>(field: &'a Field) {
+    field
+        .collect_all_drafts_cells_by_rc()
+        .iter()
+        .for_each(|vr| {
+            if vr.len() < 2 {
+                // None
+            } else {
+                for i in 0..vr.len() {
+                    let mut pair = None;
+                    if vr[i].drafts.to_vec().len() == 2 {
+                        for j in (i + 1)..vr.len() {
+                            if vr[j].drafts.delta_to(vr[i].drafts) == 0 {
+                                pair = Some((vr[i], vr[j]));
+                            }
+                        }
+                    }
+                    if pair.is_none() {
+                        continue;
+                        // None
+                    } else {
+                        let (pair1, pair2) = pair.unwrap();
+                        let vec_pair = pair1.drafts.to_vec();
+                        vr.iter().for_each(|&p| {
+                            if p.drafts.is_contain(vec_pair[0]) {
+                                println!("{:?}", p);
+                            }
+                            if p.drafts.is_contain(vec_pair[1]) {
+                                println!("{:?}", p);
+                            }
+                        });
+                    }
+                }
+                // None
+            }
+        });
+}
