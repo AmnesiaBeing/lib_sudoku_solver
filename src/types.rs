@@ -1,3 +1,5 @@
+use std::fmt::write;
+
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,
@@ -173,7 +175,7 @@ impl CellValue {
         }
     }
 
-    pub fn vec_for_iter() -> Vec<CellValue> {
+    pub fn iter() -> <Vec<CellValue> as IntoIterator>::IntoIter {
         vec![
             CellValue::V1,
             CellValue::V2,
@@ -184,7 +186,7 @@ impl CellValue {
             CellValue::V7,
             CellValue::V8,
             CellValue::V9,
-        ]
+        ].into_iter()
     }
 }
 
@@ -523,7 +525,7 @@ impl Field {
     }
 
     /// 按列遍历草稿单元格
-    pub fn collect_all_drafts_cells_by_cr(&self) -> Vec<Vec<&Cell>> {
+    pub fn iter_all_drafts_cells_by_cr(&self) -> <Vec<Vec<&Cell>> as IntoIterator>::IntoIter {
         (0..9)
             .into_iter()
             .map(|c| {
@@ -533,11 +535,12 @@ impl Field {
                     .filter(|&p| (*p).status == CellStatus::DRAFT)
                     .collect()
             })
-            .collect()
+            .collect::<Vec<Vec<&Cell>>>()
+            .into_iter()
     }
 
     /// 按宫遍历草稿单元格
-    pub fn collect_all_drafts_cells_by_gn(&self) -> Vec<Vec<&Cell>> {
+    pub fn iter_all_drafts_cells_by_gn(&self) -> <Vec<Vec<&Cell>> as IntoIterator>::IntoIter {
         (0..9)
             .into_iter()
             .map(|g| {
@@ -547,7 +550,8 @@ impl Field {
                     .filter(|&p| (*p).status == CellStatus::DRAFT)
                     .collect()
             })
-            .collect()
+            .collect::<Vec<Vec<&Cell>>>()
+            .into_iter()
     }
 
     /// 在指定行按列遍历单元格
