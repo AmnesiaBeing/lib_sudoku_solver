@@ -31,7 +31,7 @@ impl InferenceSet {
                 Box::new(RowUniqueDraftByGridInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
                 Box::new(BoxUniqueDraftByRowExclusionInference),
-                // Box::new(RowExplicitPairExclusionInference),
+                Box::new(RowExplicitPairExclusionInference),
             ],
         }
     }

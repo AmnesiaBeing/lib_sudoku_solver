@@ -84,39 +84,39 @@ mod tests {
         // sovle(&field6);
         // sovle(&field7);
 
-        // fn generate_combinations(
-        //     len: usize,
-        //     size: usize,
-        //     current: usize,
-        //     path: &mut Vec<usize>,
-        //     all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
-        // ) {
-        //     if path.len() == len {
-        //         return;
-        //     }
-        //     if path.len() == size {
-        //         let mut remaining = Vec::new();
-        //         for set in 0..len {
-        //             if !path.contains(&set) {
-        //                 remaining.push(set);
-        //             }
-        //         }
-        //         all_combinations.push((path.clone(), remaining));
-        //         return;
-        //     }
-        //     for i in current..len {
-        //         path.push(i);
-        //         generate_combinations(len, size, i + 1, path, all_combinations);
-        //         path.pop();
-        //     }
-        // }
+        fn generate_combinations(
+            len: usize,
+            size: usize,
+            current: usize,
+            path: &mut Vec<usize>,
+            all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
+        ) {
+            if path.len() == len {
+                return;
+            }
+            if path.len() == size {
+                let mut remaining = Vec::new();
+                for set in 0..len {
+                    if !path.contains(&set) {
+                        remaining.push(set);
+                    }
+                }
+                all_combinations.push((path.clone(), remaining));
+                return;
+            }
+            for i in current..len {
+                path.push(i);
+                generate_combinations(len, size, i + 1, path, all_combinations);
+                path.pop();
+            }
+        }
 
-        // let mut all_combinations = Vec::new();
-        // for size in 2..=4 {
-        //     let mut paths = Vec::new();
-        //     println!("size: {:?}, paths: {:?}", size, paths);
-        //     generate_combinations(3, size, 0, &mut paths, &mut all_combinations);
-        // }
-        // println!("{:?}", all_combinations);
+        let mut all_combinations = Vec::new();
+        for size in 2..=4 {
+            let mut paths = Vec::new();
+            println!("size: {:?}, paths: {:?}", size, paths);
+            generate_combinations(3, size, 0, &mut paths, &mut all_combinations);
+        }
+        println!("{:?}", all_combinations);
     }
 }

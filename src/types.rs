@@ -1,3 +1,5 @@
+use std::fmt::write;
+
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,
