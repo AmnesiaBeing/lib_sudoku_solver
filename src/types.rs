@@ -1,5 +1,3 @@
-use std::{mem::MaybeUninit, ptr};
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,
@@ -26,6 +24,29 @@ impl GNCoords {
         RCCoords {
             r: (self.g / 3 * 3 + self.n / 3),
             c: (self.g % 3 * 3 + self.n % 3),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+/// 兼容上述两种坐标系
+pub enum Coords {
+    RC(RCCoords),
+    GN(GNCoords),
+}
+
+impl Coords {
+    pub fn to_rc_coords(&self) -> RCCoords {
+        match self {
+            Coords::RC(ret) => *ret,
+            Coords::GN(gn) => gn.to_rc_coords(),
+        }
+    }
+
+    pub fn to_gn_coords(&self) -> GNCoords {
+        match self {
+            Coords::RC(rc) => rc.to_gn_coords(),
+            Coords::GN(ret) => *ret,
         }
     }
 }
@@ -199,6 +220,19 @@ impl std::fmt::Debug for GNCoords {
     }
 }
 
+impl std::fmt::Debug for Coords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Coords::RC(RCCoords { r, c }) => {
+                write!(f, "R{}C{}", r + 1, c + 1)
+            }
+            Coords::GN(GNCoords { g, n }) => {
+                write!(f, "G{}N{}", g + 1, n + 1)
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}{:?}", self.rc, self.gn,)?;
@@ -211,6 +245,21 @@ impl std::fmt::Debug for Cell {
     }
 }
 
+/// 某某策略的结论通常可以归纳为：因为【某个地方的某个值】，导致【某个地方的某个值】，需要做一些什么
+/// 这里定义的是【某个地方的某个值】
+#[derive(Clone)]
+pub struct TheCellAndTheValue<'a> {
+    pub the_cell: &'a Cell,
+    pub the_value: CellValue,
+}
+
+impl std::fmt::Debug for TheCellAndTheValue<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}V{:?}", self.the_cell.rc, self.the_value)
+    }
+}
+
+/// 数组本体
 #[derive(Clone)]
 pub struct Field {
     cells: [Cell; 81],
@@ -231,6 +280,27 @@ impl Field {
 
     pub fn get_cell_ref_by_gn(&self, gn: GNCoords) -> &Cell {
         &self.cells[(gn.g / 3 * 3 + gn.n / 3) * 9 + (gn.g % 3 * 3 + gn.n % 3)]
+    }
+
+    pub fn get_cell_mut_by_coords(&mut self, coords: Coords) -> &mut Cell {
+        match coords {
+            Coords::RC(rc) => self.get_cell_mut_by_rc(rc),
+            Coords::GN(gn) => self.get_cell_mut_by_gn(gn),
+        }
+    }
+
+    pub fn get_cell_ref_by_coords(&self, coords: Coords) -> &Cell {
+        match coords {
+            Coords::RC(rc) => self.get_cell_ref_by_rc(rc),
+            Coords::GN(gn) => self.get_cell_ref_by_gn(gn),
+        }
+    }
+
+    pub fn set_cell_value(&mut self, ref input: Cell) {
+        let p = &mut (self.cells[input.rc.r * 9 + input.rc.c]);
+        p.status = input.status;
+        p.value = input.value;
+        p.drafts = input.drafts;
     }
 
     // 如果一个格子中没有任何候选数，说明中间过程出错了
@@ -299,7 +369,7 @@ impl Field {
                 let rc = RCCoords { r, c };
                 let tmp_rc = self.get_cell_ref_by_rc(rc);
                 if tmp_rc.status == CellStatus::FIXED || tmp_rc.status == CellStatus::SOLVE {
-                    let v = self.get_cell_mut_by_rc(rc).value;
+                    let v = self.get_cell_ref_by_rc(rc).value;
                     for r_iter in 0..9 {
                         self.get_cell_mut_by_rc(RCCoords { r: r_iter, c })
                             .drafts
@@ -327,7 +397,7 @@ impl Field {
         }
 
         let mut field: Field = unsafe {
-            let mut field = MaybeUninit::<Field>::uninit();
+            let mut field = std::mem::MaybeUninit::<Field>::uninit();
             let p_field: *mut Field = field.as_mut_ptr();
             let p_cell: *mut Cell = (*p_field).cells.as_mut_ptr();
 
@@ -339,7 +409,7 @@ impl Field {
                 };
                 let gn = rc.to_gn_coords();
                 if tmp == 0 {
-                    ptr::write(
+                    std::ptr::write(
                         p_cell.offset(index as isize),
                         Cell {
                             rc: rc,
@@ -350,7 +420,7 @@ impl Field {
                         },
                     );
                 } else {
-                    ptr::write(
+                    std::ptr::write(
                         p_cell.offset(index as isize),
                         Cell {
                             rc: rc,
@@ -429,7 +499,7 @@ impl Field {
 
     // 以下是常见的遍历手段
 
-    // 遍历所有单元格
+    /// 遍历所有单元格
     pub fn collect_all_drafts_cells(&self) -> Vec<&Cell> {
         self.cells
             .iter()
@@ -437,8 +507,8 @@ impl Field {
             .collect::<Vec<&Cell>>()
     }
 
-    // 按行遍历草稿单元格
-    pub fn collect_all_drafts_cells_by_rc(&self) -> Vec<Vec<&Cell>> {
+    /// 按行遍历草稿单元格
+    pub fn iter_all_drafts_cells_by_rc(&self) -> <Vec<Vec<&Cell>> as IntoIterator>::IntoIter {
         (0..9)
             .into_iter()
             .map(|r| {
@@ -448,10 +518,11 @@ impl Field {
                     .filter(|&p| (*p).status == CellStatus::DRAFT)
                     .collect()
             })
-            .collect()
+            .collect::<Vec<Vec<&Cell>>>()
+            .into_iter()
     }
 
-    // 按列遍历草稿单元格
+    /// 按列遍历草稿单元格
     pub fn collect_all_drafts_cells_by_cr(&self) -> Vec<Vec<&Cell>> {
         (0..9)
             .into_iter()
@@ -465,7 +536,7 @@ impl Field {
             .collect()
     }
 
-    // 按宫遍历草稿单元格
+    /// 按宫遍历草稿单元格
     pub fn collect_all_drafts_cells_by_gn(&self) -> Vec<Vec<&Cell>> {
         (0..9)
             .into_iter()
@@ -479,7 +550,7 @@ impl Field {
             .collect()
     }
 
-    // 在指定行按列遍历单元格
+    /// 在指定行按列遍历单元格
     pub fn collect_all_drafts_cells_in_r(&self, r: usize) -> Vec<&Cell> {
         (0..9)
             .into_iter()
@@ -488,7 +559,7 @@ impl Field {
             .collect()
     }
 
-    // 在指定列按行遍历单元格
+    /// 在指定列按行遍历单元格
     pub fn collect_all_drafts_cells_in_c(&self, c: usize) -> Vec<&Cell> {
         (0..9)
             .into_iter()
@@ -497,7 +568,7 @@ impl Field {
             .collect()
     }
 
-    // 在指定宫按序遍历单元格
+    /// 在指定宫按序遍历单元格
     pub fn collect_all_drafts_cells_in_g(&self, g: usize) -> Vec<&Cell> {
         (0..9)
             .into_iter()
@@ -506,7 +577,65 @@ impl Field {
             .collect()
     }
 
-    // 检查是否都填写完毕了
+    /// 给定一个坐标，根据坐标遍历同一行、同一列、同一宫所有可辐射的单元格（若自身为可操作单元格，则包括自身）
+    pub fn collect_all_drafts_cells_by_coords(&self, coords: Coords) -> Vec<&Cell> {
+        let RCCoords { r, c } = coords.to_rc_coords();
+        let GNCoords { g, n: _ } = coords.to_gn_coords();
+
+        // 先搜集行
+        (0..9)
+            .into_iter()
+            .map(|c_iter| self.get_cell_ref_by_rc(RCCoords { r, c: c_iter }))
+            .filter(|&p| (*p).status == CellStatus::DRAFT)
+            .chain(
+                // 再收集列，注意去重
+                (0..9)
+                    .into_iter()
+                    .map(|r_iter| self.get_cell_ref_by_rc(RCCoords { r: r_iter, c }))
+                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).rc.r != r),
+            )
+            .chain(
+                (0..9)
+                    .into_iter()
+                    .map(|n_iter| self.get_cell_ref_by_gn(GNCoords { g, n: n_iter }))
+                    .filter(|&p| {
+                        (*p).status == CellStatus::DRAFT && (*p).rc.r != r && (*p).rc.c != c
+                    }),
+            )
+            .collect()
+    }
+
+    // 当某个格子设置某个值的时候，将同行列宫的该值的草稿值移除，输入值在vec_set_value.cells内，且value唯一
+    pub fn collect_all_drafts_coords_by_the_coords_and_the_value(
+        &self,
+        middle_cell: &Cell,
+        value: CellValue,
+    ) -> Option<Vec<TheCellAndTheValue>> {
+        // let RCCoords { r, c } = middle_cell.rc;
+
+        let ret: Vec<TheCellAndTheValue> = self
+            .collect_all_drafts_cells_by_coords(Coords::RC(middle_cell.rc.clone()))
+            .iter()
+            .filter_map(|&p| {
+                if p.drafts.is_contain(value) {
+                    Some(TheCellAndTheValue {
+                        the_cell: *&p,
+                        the_value: value,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if ret.len() != 0 {
+            Some(ret)
+        } else {
+            None
+        }
+    }
+
+    /// 检查是否都填写完毕了
     pub fn check_if_finish(&self) -> bool {
         self.collect_all_drafts_cells().len() == 0
     }
