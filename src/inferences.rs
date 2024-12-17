@@ -28,7 +28,7 @@ impl InferenceSet {
                 Box::new(OnlyOneRightInGridInference),
                 Box::new(RowUniqueDraftByGridInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
-                Box::new(BoxUniqueDraftByRowExclusionInference)
+                Box::new(BoxUniqueDraftByRowExclusionInference),
             ],
         }
     }
@@ -474,11 +474,9 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
 
 /// 当一行的草稿数正好在一宫时，排除该宫的其他草稿数
 struct BoxUniqueDraftByRowExclusionInference;
-impl Inference for BoxUniqueDraftByRowExclusionInference{
+impl Inference for BoxUniqueDraftByRowExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-    field
-        .iter_all_drafts_cells_by_rc()
-        .find_map(|vr| {
+        field.iter_all_drafts_cells_by_rc().find_map(|vr| {
             CellValue::iter()
                 .filter_map(|v| {
                     let tmp: Vec<&Cell> = vr
@@ -561,11 +559,9 @@ impl Inference for BoxUniqueDraftByRowExclusionInference{
 
 /// 当一列的草稿数正好在一宫时，排除该宫的其他草稿数
 struct BoxUniqueDraftByColExclusionInference;
-impl Inference for BoxUniqueDraftByColExclusionInference{
+impl Inference for BoxUniqueDraftByColExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-    field
-        .iter_all_drafts_cells_by_cr()
-        .find_map(|vc| {
+        field.iter_all_drafts_cells_by_cr().find_map(|vc| {
             CellValue::iter()
                 .filter_map(|v| {
                     let tmp: Vec<&Cell> = vc
@@ -646,41 +642,17 @@ impl Inference for BoxUniqueDraftByColExclusionInference{
     }
 }
 
-// 显性数对排除法，在某一行中，存在二数对时，排除该行中其余数对草稿数
-// pub fn search_naked_pair_in_row(field: &Field) {
-//     field
-//         .collect_all_drafts_cells_by_rc()
-//         .iter()
-//         .for_each(|vr| {
-//             if vr.len() < 2 {
-//                 // None
-//             } else {
-//                 for i in 0..vr.len() {
-//                     let mut pair = None;
-//                     if vr[i].drafts.to_vec().len() == 2 {
-//                         for j in (i + 1)..vr.len() {
-//                             if vr[j].drafts.delta_to(vr[i].drafts) == 0 {
-//                                 pair = Some((vr[i], vr[j]));
-//                             }
-//                         }
-//                     }
-//                     if pair.is_none() {
-//                         continue;
-//                         // None
-//                     } else {
-//                         let (pair1, pair2) = pair.unwrap();
-//                         let vec_pair = pair1.drafts.to_vec();
-//                         vr.iter().for_each(|&p| {
-//                             if p.drafts.is_contain(vec_pair[0]) {
-//                                 println!("{:?}", p);
-//                             }
-//                             if p.drafts.is_contain(vec_pair[1]) {
-//                                 println!("{:?}", p);
-//                             }
-//                         });
-//                     }
-//                 }
-//                 // None
-//             }
-//         });
-// }
+/// 显性数对排除法（行），在某一行中，存在2/3/4数对时，排除该行中其余数对草稿数
+struct RowExplicitPairExclusionInference;
+impl Inference for RowExplicitPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        // 便利每一行所有是草稿状态的格子，如果草稿数量为X个，X>=2&&X<=4，且后续格子数量>=X-1个
+        // 则向后判断相同草稿的格子，如果找到X个相同草稿的格子，则这些格子是一个数对
+        // 数对找到时，判断其余格子是否有这些数对中的数，有的话则删除
+        todo!()
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        todo!()
+    }
+}
