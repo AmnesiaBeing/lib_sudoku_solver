@@ -267,7 +267,7 @@ impl std::fmt::Debug for Cell {
 #[derive(Clone)]
 pub struct TheCellAndTheValue<'a> {
     pub the_cell: &'a Cell,
-    pub the_value: CellValue,
+    pub the_value: Vec<CellValue>,
 }
 
 impl std::fmt::Debug for TheCellAndTheValue<'_> {
@@ -639,7 +639,7 @@ impl Field {
                 if p.drafts.is_contain(value) {
                     Some(TheCellAndTheValue {
                         the_cell: *&p,
-                        the_value: value,
+                        the_value: vec![value],
                     })
                 } else {
                     None

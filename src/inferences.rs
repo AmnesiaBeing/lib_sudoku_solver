@@ -44,7 +44,7 @@ impl InferenceSet {
         if result.conclusion_set_value.is_some() {
             result.conclusion_set_value.unwrap().iter().for_each(|cv| {
                 let p = ret.get_cell_mut_by_coords(Coords::RC((cv.the_cell).rc));
-                p.value = cv.the_value;
+                p.value = cv.the_value[0];
                 p.status = CellStatus::SOLVE;
             })
         };
@@ -55,7 +55,7 @@ impl InferenceSet {
                 .iter()
                 .for_each(|cv| {
                     let p = ret.get_cell_mut_by_coords(Coords::RC((cv.the_cell).rc));
-                    p.drafts.remove_draft(cv.the_value);
+                    p.drafts.remove_draft(cv.the_value[0]);
                 })
         }
         ret
@@ -80,7 +80,7 @@ impl Inference for OnlyOneLeftInference {
                 (*p).drafts.try_get_the_only_one().and_then(|cv| {
                     Some(TheCellAndTheValue {
                         the_cell: p,
-                        the_value: cv,
+                        the_value: vec![cv],
                     })
                 })
             })
@@ -93,7 +93,7 @@ impl Inference for OnlyOneLeftInference {
                         conclusion_remove_drafts: field
                             .collect_all_drafts_coords_by_the_coords_and_the_value(
                                 ret.the_cell,
-                                ret.the_value,
+                                ret.the_value[0],
                             ),
                     }
                 })
@@ -145,7 +145,7 @@ impl Inference for OnlyOneRightInRowInference {
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
                             the_cell: p,
-                            the_value: ret,
+                            the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
@@ -205,7 +205,7 @@ impl Inference for OnlyOneRightInColInference {
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
                             the_cell: p,
-                            the_value: ret,
+                            the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
@@ -265,7 +265,7 @@ impl Inference for OnlyOneRightInGridInference {
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
                             the_cell: p,
-                            the_value: ret,
+                            the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
@@ -341,7 +341,7 @@ impl Inference for RowUniqueDraftByGridInference {
                                     .iter()
                                     .map(|&p| TheCellAndTheValue {
                                         the_cell: p,
-                                        the_value: v,
+                                        the_value: vec![v],
                                     })
                                     .collect::<Vec<TheCellAndTheValue>>(),
                                 conclusion_set_value: None,
@@ -349,7 +349,7 @@ impl Inference for RowUniqueDraftByGridInference {
                                     ret2.iter()
                                         .map(|&p| TheCellAndTheValue {
                                             the_cell: p,
-                                            the_value: v,
+                                            the_value: vec![v],
                                         })
                                         .collect::<Vec<TheCellAndTheValue>>(),
                                 ),
@@ -425,7 +425,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                                 .iter()
                                 .map(|&p| TheCellAndTheValue {
                                     the_cell: p,
-                                    the_value: v,
+                                    the_value: vec![v],
                                 })
                                 .collect::<Vec<TheCellAndTheValue>>(),
                             conclusion_set_value: None,
@@ -433,7 +433,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                                 ret2.iter()
                                     .map(|&p| TheCellAndTheValue {
                                         the_cell: p,
-                                        the_value: v,
+                                        the_value: vec![v],
                                     })
                                     .collect::<Vec<TheCellAndTheValue>>(),
                             ),
@@ -507,7 +507,7 @@ impl Inference for BoxUniqueDraftByRowExclusionInference {
                                     .iter()
                                     .map(|&p| TheCellAndTheValue {
                                         the_cell: p,
-                                        the_value: v,
+                                        the_value: vec![v],
                                     })
                                     .collect::<Vec<TheCellAndTheValue>>(),
                                 conclusion_set_value: None,
@@ -515,7 +515,7 @@ impl Inference for BoxUniqueDraftByRowExclusionInference {
                                     ret2.iter()
                                         .map(|&p| TheCellAndTheValue {
                                             the_cell: p,
-                                            the_value: v,
+                                            the_value: vec![v],
                                         })
                                         .collect::<Vec<TheCellAndTheValue>>(),
                                 ),
@@ -592,7 +592,7 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
                                     .iter()
                                     .map(|&p| TheCellAndTheValue {
                                         the_cell: p,
-                                        the_value: v,
+                                        the_value: vec![v],
                                     })
                                     .collect::<Vec<TheCellAndTheValue>>(),
                                 conclusion_set_value: None,
@@ -600,7 +600,7 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
                                     ret2.iter()
                                         .map(|&p| TheCellAndTheValue {
                                             the_cell: p,
-                                            the_value: v,
+                                            the_value: vec![v],
                                         })
                                         .collect::<Vec<TheCellAndTheValue>>(),
                                 ),
@@ -687,14 +687,32 @@ impl Inference for RowExplicitPairExclusionInference {
                     union_set = union_set.union(vr[*set].drafts);
                 }
                 // 检查并集的数量是否等于集合的数量
-                if union_set.len() == size {
-                    // 判断剩余格子内，是否有这个union的值
-                    union_set
-                        .to_vec()
-                        .iter()
-                        .find(|&v| rest.iter().find(|&&rr| vr[rr].drafts.is_contain(v)).is_some())
+                if union_set.len() == combo.len() {
+                    // 收集剩余格子内，所有这个union的值，当然，如果是空集，返回None
+                    // union_set
+                    //     .to_vec()
+                    //     .iter()
+                    //     .filter_map(|v| rest.iter().filter_map(|rr| vr[*rr].drafts.is_contain(**v)));
+                    for tmp in union_set.to_vec() {
+                        for tmp2 in rest{
+                            if vr[tmp2].drafts.is_contain(tmp) {
+                                
+                            }
+                        }
+                    }
                 }
+                // 最后要得到
+                // InferenceResult{
+                    // condition: Vec<CV{
+                        // the_cell: combo
+                        // the_value: union
+                    // }
+                    // set_value: None
+                    // remove_draft: rest
+                // }
+                // Some(InferenceResult)
             }
+            None
         });
         todo!()
     }
