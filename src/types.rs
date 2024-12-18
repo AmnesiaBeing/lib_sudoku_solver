@@ -1,4 +1,4 @@
-use std::fmt::write;
+use std::{fmt::write, hash::Hash};
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
@@ -53,7 +53,7 @@ impl Coords {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Drafts {
     drafts: [bool; 9],
 }
@@ -115,6 +115,20 @@ impl Drafts {
                 ret += 1;
             }
         });
+        ret
+    }
+
+    pub fn len(&self) -> usize {
+        self.delta_to(Drafts::default())
+    }
+
+    pub fn union(&self, other: Drafts) -> Drafts {
+        let mut ret: Drafts = Drafts::default();
+        for i in 0..9 {
+            if self.drafts[i] || other.drafts[i] {
+                ret.drafts[i] = true;
+            }
+        }
         ret
     }
 }
@@ -186,7 +200,8 @@ impl CellValue {
             CellValue::V7,
             CellValue::V8,
             CellValue::V9,
-        ].into_iter()
+        ]
+        .into_iter()
     }
 }
 

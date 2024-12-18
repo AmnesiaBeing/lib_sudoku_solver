@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::types::{
-    Cell, CellStatus, CellValue, Coords, Field, GNCoords, RCCoords, TheCellAndTheValue,
+    Cell, CellStatus, CellValue, Coords, Drafts, Field, GNCoords, RCCoords, TheCellAndTheValue,
 };
 
 pub struct InferenceResult<'a> {
@@ -642,13 +644,58 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
     }
 }
 
-/// 显性数对排除法（行），在某一行中，存在2/3/4数对时，排除该行中其余数对草稿数
+/// 显性数对排除法（行），在某一行中，存在2/3/4/5数对时，排除该行中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
 struct RowExplicitPairExclusionInference;
 impl Inference for RowExplicitPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        // 便利每一行所有是草稿状态的格子，如果草稿数量为X个，X>=2&&X<=4，且后续格子数量>=X-1个
-        // 则向后判断相同草稿的格子，如果找到X个相同草稿的格子，则这些格子是一个数对
-        // 数对找到时，判断其余格子是否有这些数对中的数，有的话则删除
+        // 定义子函数，将一个集合拆分成X和剩余部分的两个集合，且 2<=X<=4
+        // 这里生成长度为2/3/4的所有组合的数组索引
+        fn generate_combinations(
+            len: usize,
+            size: usize,
+            current: usize,
+            path: &mut Vec<usize>,
+            all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
+        ) {
+            if path.len() == size {
+                let mut remaining = Vec::new();
+                for set in 0..len {
+                    if !path.contains(&set) {
+                        remaining.push(set);
+                    }
+                }
+                all_combinations.push((path.clone(), remaining));
+                return;
+            }
+            for i in current..len {
+                path.push(i);
+                generate_combinations(len, size, i + 1, path, all_combinations);
+                path.pop();
+            }
+        }
+
+        field.iter_all_drafts_cells_by_rc().find_map(|vr| {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                generate_combinations(vr.len(), size, 0, &mut paths, &mut all_combinations);
+            }
+            for (combo, rest) in all_combinations {
+                let mut union_set = Drafts::default();
+                for set in &combo {
+                    union_set = union_set.union(vr[*set].drafts);
+                }
+                // 检查并集的数量是否等于集合的数量
+                if union_set.len() == size {
+                    // 判断剩余格子内，是否有这个union的值
+                    union_set
+                        .to_vec()
+                        .iter()
+                        .find(|&v| rest.iter().find(|&&rr| vr[rr].drafts.is_contain(v)).is_some())
+                }
+            }
+        });
         todo!()
     }
 
