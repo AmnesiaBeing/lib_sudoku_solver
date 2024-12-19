@@ -15,16 +15,16 @@ mod tests {
                 Some(inference) => {
                     println!("{:?}", inference);
                     field = InferenceSet::apply(&field, inference);
-                    field.print();
+                    // field.print();
                     if field.check_if_finish() {
                         println!("推导完毕!");
                         field.print();
-                        // break;
+                        break;
                     }
                 }
                 None => {
                     println!("无法推导!");
-                    // break;
+                    break;
                 }
             }
         }

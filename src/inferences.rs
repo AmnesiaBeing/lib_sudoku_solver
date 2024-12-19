@@ -685,22 +685,14 @@ impl Inference for RowExplicitPairExclusionInference {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
                 let mut paths = Vec::new();
-                println!("size: {:?}, paths: {:?}", size, paths);
                 generate_combinations(vr.len(), size, 0, &mut paths, &mut all_combinations);
             }
 
-            println!("all: {:?}", all_combinations);
             for (combo, rest) in all_combinations {
                 let mut union_set = Drafts::default();
                 for set in &combo {
                     union_set = union_set.union(vr[*set].drafts);
                 }
-                println!(
-                    "combo: {:?}, rest: {:?}, union: {:?}",
-                    combo,
-                    rest,
-                    union_set.to_vec()
-                );
                 let union_set_vec = union_set.to_vec();
                 // 检查并集的数量是否等于集合的数量
                 if union_set_vec.len() == combo.len() {
@@ -728,7 +720,13 @@ impl Inference for RowExplicitPairExclusionInference {
                                     })
                                     .collect(),
                             );
-                            println!("{:?}, {:?}", condition, conclusion);
+                            field.print();
+                            println!(
+                                "combo: {:?}, rest: {:?}, union: {:?}, condition: {:?}, conclusion: {:?}",
+                                combo,
+                                rest,
+                                union_set.to_vec(), condition, conclusion
+                            );
                             return Some(InferenceResult {
                                 inference: self,
                                 condition: condition,
@@ -739,8 +737,13 @@ impl Inference for RowExplicitPairExclusionInference {
                         // 如果tmp_ret是empty，那就不用返回了
                     }
                 }
+                // println!(
+                //     "combo: {:?}, rest: {:?}, union: {:?}",
+                //     combo,
+                //     rest,
+                //     union_set.to_vec()
+                // );
             }
-            // None
         }
         None
     }
