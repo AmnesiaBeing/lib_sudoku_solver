@@ -55,7 +55,7 @@ impl Coords {
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Drafts {
-    drafts: [bool; 9],
+    pub drafts: [bool; 9],
 }
 
 impl Drafts {

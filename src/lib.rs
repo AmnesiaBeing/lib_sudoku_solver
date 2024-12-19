@@ -1,9 +1,10 @@
 pub mod inferences;
 pub mod types;
+pub mod utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::{inferences::InferenceSet, types::Field};
+    use crate::{inferences::InferenceSet, types::Field, utils::generate_combinations};
 
     fn sovle(field: &Field) {
         let mut field = field.clone();
@@ -101,34 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn other_test(){
-        fn generate_combinations(
-            len: usize,
-            size: usize,
-            current: usize,
-            path: &mut Vec<usize>,
-            all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
-        ) {
-            if path.len() == len {
-                return;
-            }
-            if path.len() == size {
-                let mut remaining = Vec::new();
-                for set in 0..len {
-                    if !path.contains(&set) {
-                        remaining.push(set);
-                    }
-                }
-                all_combinations.push((path.clone(), remaining));
-                return;
-            }
-            for i in current..len {
-                path.push(i);
-                generate_combinations(len, size, i + 1, path, all_combinations);
-                path.pop();
-            }
-        }
-
+    fn generate_combinations_test(){
         let mut all_combinations = Vec::new();
         for size in 2..=4 {
             let mut paths = Vec::new();

@@ -32,6 +32,8 @@ impl InferenceSet {
                 Box::new(ColUniqueDraftByGridExclusionInference),
                 Box::new(BoxUniqueDraftByRowExclusionInference),
                 Box::new(RowExplicitPairExclusionInference),
+                Box::new(ColExplicitPairExclusionInference),
+                Box::new(GridExplicitPairExclusionInference),
             ],
         }
     }
@@ -74,54 +76,45 @@ impl std::fmt::Debug for InferenceResult<'_> {
 struct OnlyOneLeftInference;
 impl Inference for OnlyOneLeftInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        field
-            .collect_all_drafts_cells()
-            .iter()
-            .find_map(|&p| {
-                (*p).drafts.try_get_the_only_one().and_then(|cv| {
-                    Some(TheCellAndTheValue {
-                        the_cell: p,
-                        the_value: vec![cv],
-                    })
-                })
+        field.collect_all_drafts_cells().iter().find_map(|&p| {
+            p.drafts.try_get_the_only_one().map(|cv| {
+                let cell_and_value = TheCellAndTheValue {
+                    the_cell: p,
+                    the_value: vec![cv],
+                };
+                InferenceResult {
+                    inference: self,
+                    condition: vec![cell_and_value.clone()],
+                    conclusion_set_value: Some(vec![cell_and_value.clone()]),
+                    conclusion_remove_drafts: field
+                        .collect_all_drafts_coords_by_the_coords_and_the_value(
+                            cell_and_value.the_cell,
+                            cell_and_value.the_value[0],
+                        ),
+                }
             })
-            .and_then(move |ret| {
-                Some({
-                    InferenceResult {
-                        inference: self,
-                        condition: vec![ret.clone()],
-                        conclusion_set_value: Some(vec![ret.clone()]),
-                        conclusion_remove_drafts: field
-                            .collect_all_drafts_coords_by_the_coords_and_the_value(
-                                ret.the_cell,
-                                ret.the_value[0],
-                            ),
-                    }
-                })
-            })
+        })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
+        let condition = &inference_result.condition[0];
         let mut r = format!(
-            "{:?} 的可能 {:?} 在格内唯一，推导出：这里只能填写 {:?} ",
-            inference_result.condition[0].the_cell.rc,
-            inference_result.condition[0].the_value,
-            inference_result.condition[0].the_value
+            "{:?} 的可能 {:?} 在格内唯一，因此 {:?} 只能填写 {:?} ",
+            condition.the_cell.rc,
+            condition.the_value[0],
+            condition.the_cell.rc,
+            condition.the_value[0]
         );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            r.push_str(&format!("，且移除 "));
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
-                .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             r.push_str(&format!(
-                "的可能 {:?} ",
-                inference_result.condition[0].the_value
+                "，并移除 {} 的可能 {:?}",
+                conclusion_remove_drafts
+                    .iter()
+                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                condition.the_value[0]
             ));
         }
 
@@ -139,9 +132,8 @@ impl Inference for OnlyOneRightInRowInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vr.iter().fold(false, |acc, p_iter| {
-                            acc || ((p_iter.rc.c != p.rc.c) && (p_iter.drafts.is_contain(*v)))
-                        }))
+                        !(vr.iter()
+                            .all(|p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(*v)))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -161,27 +153,25 @@ impl Inference for OnlyOneRightInRowInference {
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
+        let condition = &inference_result.condition[0];
         let mut r = format!(
-            "{:?} 的可能 {:?} 在 R{:?} 内唯一，推导出：这里只能填写 {:?} ",
-            inference_result.condition[0].the_cell.rc,
-            inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.rc.r + 1,
-            inference_result.condition[0].the_value
+            "{:?} 的可能 {:?} 在 R{:?} 内唯一，因此 {:?} 只能填写 {:?}",
+            condition.the_cell.rc,
+            condition.the_value[0],
+            condition.the_cell.rc.r + 1,
+            condition.the_cell.rc,
+            condition.the_value[0]
         );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            r.push_str(&format!("，且移除 "));
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
-                .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             r.push_str(&format!(
-                "的可能 {:?} ",
-                inference_result.condition[0].the_value
+                "，并移除 {} 的可能 {:?}",
+                conclusion_remove_drafts
+                    .iter()
+                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                condition.the_value[0]
             ));
         }
 
@@ -199,9 +189,8 @@ impl Inference for OnlyOneRightInColInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vc.iter().fold(false, |acc, p_iter| {
-                            acc || ((p_iter.rc.r != p.rc.r) && (p_iter.drafts.is_contain(*v)))
-                        }))
+                        !(vc.iter()
+                            .all(|p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(*v)))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -221,27 +210,25 @@ impl Inference for OnlyOneRightInColInference {
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
+        let condition = &inference_result.condition[0];
         let mut r = format!(
-            "{:?} 的可能 {:?} 在 C{:?} 内唯一，推导出：这里只能填写 {:?} ",
-            inference_result.condition[0].the_cell.rc,
-            inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.rc.c + 1,
-            inference_result.condition[0].the_value
+            "{:?} 的可能 {:?} 在 C{:?} 内唯一，因此 {:?} 只能填写 {:?}",
+            condition.the_cell.rc,
+            condition.the_value[0],
+            condition.the_cell.rc.c + 1,
+            condition.the_cell.rc,
+            condition.the_value[0]
         );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            r.push_str(&format!("，且移除 "));
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
-                .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             r.push_str(&format!(
-                "的可能 {:?} ",
-                inference_result.condition[0].the_value
+                "，并移除 {} 的可能 {:?}",
+                conclusion_remove_drafts
+                    .iter()
+                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                condition.the_value[0]
             ));
         }
 
@@ -259,9 +246,8 @@ impl Inference for OnlyOneRightInGridInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vg.iter().fold(false, |acc, p_iter| {
-                            acc || ((p_iter.gn.n != p.gn.n) && (p_iter.drafts.is_contain(*v)))
-                        }))
+                        !(vg.iter()
+                            .all(|p_iter| p_iter.gn.n != p.gn.n && p_iter.drafts.is_contain(*v)))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -281,27 +267,25 @@ impl Inference for OnlyOneRightInGridInference {
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
+        let condition = &inference_result.condition[0];
         let mut r = format!(
-            "{:?} 的可能 {:?} 在 G{:?} 内唯一，推导出：这里只能填写 {:?} ",
-            inference_result.condition[0].the_cell.gn,
-            inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.gn.g + 1,
-            inference_result.condition[0].the_value
+            "{:?} 的可能 {:?} 在 G{:?} 内唯一，因此 {:?} 只能填写 {:?}",
+            condition.the_cell.gn,
+            condition.the_value[0],
+            condition.the_cell.gn.g + 1,
+            condition.the_cell.gn,
+            condition.the_value[0]
         );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            r.push_str(&format!("，且移除 "));
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
-                .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.gn));
-                });
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             r.push_str(&format!(
-                "的可能 {:?} ",
-                inference_result.condition[0].the_value
+                "，并移除 {} 的可能 {:?}",
+                conclusion_remove_drafts
+                    .iter()
+                    .map(|cv| format!("{:?}", cv.the_cell.gn))
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                condition.the_value[0]
             ));
         }
 
@@ -314,79 +298,79 @@ struct RowUniqueDraftByGridInference;
 impl Inference for RowUniqueDraftByGridInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::iter()
-                .filter_map(|v| {
-                    let tmp: Vec<&Cell> = vg
+            CellValue::iter().find_map(|v| {
+                let cells_with_value = vg
+                    .iter()
+                    .filter(|&p| p.drafts.is_contain(v))
+                    .collect::<Vec<_>>();
+
+                if !cells_with_value.is_empty()
+                    && cells_with_value
                         .iter()
-                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
-                        .collect::<Vec<&Cell>>();
-                    (tmp.len() != 0).then_some((v, tmp))
-                })
-                .find_map(|(v, vp)| {
-                    {
-                        let vr = field.collect_all_drafts_cells_in_r(vp[0].rc.r);
-                        // 条件1：该宫内其他行没有这个值
-                        let ret1 = !vp.iter().any(|&p| (p.rc.r != vp[0].rc.r));
-                        // 条件2：宫外该行内有这个值
-                        let ret2 = vr
+                        .all(|&p| p.rc.r == cells_with_value[0].rc.r)
+                {
+                    let cells_in_same_row_but_not_in_same_grid: Vec<&Cell> = field
+                        .collect_all_drafts_cells_in_r(cells_with_value[0].rc.r)
+                        .into_iter()
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.drafts.is_contain(v))
+                        .collect();
+
+                    if !cells_in_same_row_but_not_in_same_grid.is_empty() {
+                        let condition = cells_with_value
                             .iter()
-                            .filter_map(|&vr_p_iter| {
-                                ((vr_p_iter.gn.g != vp[0].gn.g) && vr_p_iter.drafts.is_contain(v))
-                                    .then_some(vr_p_iter)
+                            .map(|&p| TheCellAndTheValue {
+                                the_cell: p,
+                                the_value: vec![v],
                             })
-                            .collect::<Vec<&Cell>>();
-                        if ret1 && ret2.len() != 0 {
-                            Some(InferenceResult {
-                                inference: self,
-                                condition: vp
-                                    .iter()
-                                    .map(|&p| TheCellAndTheValue {
-                                        the_cell: p,
-                                        the_value: vec![v],
-                                    })
-                                    .collect::<Vec<TheCellAndTheValue>>(),
-                                conclusion_set_value: None,
-                                conclusion_remove_drafts: Some(
-                                    ret2.iter()
-                                        .map(|&p| TheCellAndTheValue {
-                                            the_cell: p,
-                                            the_value: vec![v],
-                                        })
-                                        .collect::<Vec<TheCellAndTheValue>>(),
-                                ),
+                            .collect();
+
+                        let conclusion = cells_in_same_row_but_not_in_same_grid
+                            .iter()
+                            .map(|&p| TheCellAndTheValue {
+                                the_cell: p,
+                                the_value: vec![v],
                             })
-                        } else {
-                            None
-                        }
+                            .collect();
+
+                        Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        })
+                    } else {
+                        None
                     }
-                })
+                } else {
+                    None
+                }
+            })
         })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        let mut r: String = "".to_string();
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&format!(
-            "的所有可能 {:?} 在 G{:?} 内都只在 R{:?} 中，推导出：",
-            inference_result.condition[0].the_value,
+        let mut r = format!(
+            "{} 的所有可能 {:?} 在 G{:?} 内都只在 R{:?} 中，因此 ",
+            inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect::<Vec<String>>()
+                .join(" "),
+            inference_result.condition[0].the_value[0],
             inference_result.condition[0].the_cell.gn.g + 1,
             inference_result.condition[0].the_cell.rc.r + 1
-        ));
+        );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
             r.push_str(&format!(
-                "均不能填写 {:?} 。",
-                inference_result.condition[0].the_value
+                "{} 均不能填写 {:?}。",
+                removed_cells.join(" "),
+                inference_result.condition[0].the_value[0]
             ));
         }
 
@@ -399,75 +383,79 @@ struct ColUniqueDraftByGridExclusionInference;
 impl Inference for ColUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::iter()
-                .filter_map(|v| {
-                    let tmp: Vec<&Cell> = vg
+            CellValue::iter().find_map(|v| {
+                let cells_with_value = vg
+                    .iter()
+                    .filter(|&p| p.drafts.is_contain(v))
+                    .collect::<Vec<_>>();
+
+                if !cells_with_value.is_empty()
+                    && cells_with_value
                         .iter()
-                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
-                        .collect::<Vec<&Cell>>();
-                    (tmp.len() != 0).then_some((v, tmp))
-                })
-                .find_map(|(v, vp)| {
-                    {
-                        let vc = field.collect_all_drafts_cells_in_c(vp[0].rc.c);
-                        // 条件1：该宫内其他列没有这个值
-                        let ret1 = !vp.iter().any(|&p| (p.rc.c != vp[0].rc.c));
-                        // 条件2：宫外该列内有这个值
-                        let ret2 = vc
+                        .all(|&p| p.rc.c == cells_with_value[0].rc.c)
+                {
+                    let cells_in_same_col_but_not_in_same_grid: Vec<&Cell> = field
+                        .collect_all_drafts_cells_in_c(cells_with_value[0].rc.c)
+                        .into_iter()
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.drafts.is_contain(v))
+                        .collect();
+
+                    if !cells_in_same_col_but_not_in_same_grid.is_empty() {
+                        let condition = cells_with_value
                             .iter()
-                            .filter_map(|&vc_p_iter| {
-                                ((vc_p_iter.gn.g != vp[0].gn.g) && vc_p_iter.drafts.is_contain(v))
-                                    .then_some(vc_p_iter)
+                            .map(|&p| TheCellAndTheValue {
+                                the_cell: p,
+                                the_value: vec![v],
                             })
-                            .collect::<Vec<&Cell>>();
-                        (ret1 && ret2.len() != 0).then_some(InferenceResult {
+                            .collect();
+
+                        let conclusion = cells_in_same_col_but_not_in_same_grid
+                            .iter()
+                            .map(|&p| TheCellAndTheValue {
+                                the_cell: p,
+                                the_value: vec![v],
+                            })
+                            .collect();
+
+                        Some(InferenceResult {
                             inference: self,
-                            condition: vp
-                                .iter()
-                                .map(|&p| TheCellAndTheValue {
-                                    the_cell: p,
-                                    the_value: vec![v],
-                                })
-                                .collect::<Vec<TheCellAndTheValue>>(),
+                            condition,
                             conclusion_set_value: None,
-                            conclusion_remove_drafts: Some(
-                                ret2.iter()
-                                    .map(|&p| TheCellAndTheValue {
-                                        the_cell: p,
-                                        the_value: vec![v],
-                                    })
-                                    .collect::<Vec<TheCellAndTheValue>>(),
-                            ),
+                            conclusion_remove_drafts: Some(conclusion),
                         })
+                    } else {
+                        None
                     }
-                })
+                } else {
+                    None
+                }
+            })
         })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        let mut r: String = "".to_string();
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&format!(
-            "的所有可能 {:?} 在 G{:?} 内都只在 C{:?} 中，推导出：",
-            inference_result.condition[0].the_value,
+        let mut r = format!(
+            "{} 的所有可能 {:?} 在 G{:?} 内都只在 C{:?} 中，因此 ",
+            inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect::<Vec<String>>()
+                .join(" "),
+            inference_result.condition[0].the_value[0],
             inference_result.condition[0].the_cell.gn.g + 1,
             inference_result.condition[0].the_cell.rc.c + 1
-        ));
+        );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
             r.push_str(&format!(
-                "均不能填写 {:?} 。",
-                inference_result.condition[0].the_value
+                "{} 均不能填写 {:?}。",
+                removed_cells.join(" "),
+                inference_result.condition[0].the_value[0]
             ));
         }
 
@@ -480,78 +468,72 @@ struct BoxUniqueDraftByRowExclusionInference;
 impl Inference for BoxUniqueDraftByRowExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
-            CellValue::iter()
-                .filter_map(|v| {
-                    let tmp: Vec<&Cell> = vr
-                        .iter()
-                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
-                        .collect::<Vec<&Cell>>();
-                    (tmp.len() != 0).then_some((v, tmp))
-                })
-                .find_map(|(v, vp)| {
-                    {
-                        let vg = field.collect_all_drafts_cells_in_g(vp[0].gn.g);
+            CellValue::iter().find_map(|v| {
+                vr.iter()
+                    .filter(|&p| p.drafts.is_contain(v))
+                    .find(|&p| {
+                        let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
                         // 条件1：该行内的值都在同一个宫内
-                        let ret1 = !vp.iter().any(|&p| (p.gn.g != vp[0].gn.g));
+                        let all_in_same_grid = vr.iter().all(|&p_iter| p_iter.gn.g == p.gn.g);
                         // 条件2：第一个值所在的宫，在其他行内有值
-                        let ret2 = vg
+                        let others_in_same_grid = vg
                             .iter()
-                            .filter_map(|&vr_p_iter| {
-                                ((vr_p_iter.rc.r != vp[0].rc.r) && vr_p_iter.drafts.is_contain(v))
-                                    .then_some(vr_p_iter)
+                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(v));
+                        all_in_same_grid && others_in_same_grid
+                    })
+                    .map(|p| {
+                        let condition = vr
+                            .iter()
+                            .filter(|&p_iter| p_iter.drafts.is_contain(v))
+                            .map(|p_iter| TheCellAndTheValue {
+                                the_cell: p_iter,
+                                the_value: vec![v],
                             })
-                            .collect::<Vec<&Cell>>();
-                        if ret1 && ret2.len() != 0 {
-                            Some(InferenceResult {
-                                inference: self,
-                                condition: vp
-                                    .iter()
-                                    .map(|&p| TheCellAndTheValue {
-                                        the_cell: p,
-                                        the_value: vec![v],
-                                    })
-                                    .collect::<Vec<TheCellAndTheValue>>(),
-                                conclusion_set_value: None,
-                                conclusion_remove_drafts: Some(
-                                    ret2.iter()
-                                        .map(|&p| TheCellAndTheValue {
-                                            the_cell: p,
-                                            the_value: vec![v],
-                                        })
-                                        .collect::<Vec<TheCellAndTheValue>>(),
-                                ),
+                            .collect::<Vec<TheCellAndTheValue>>();
+
+                        let conclusion = field
+                            .collect_all_drafts_cells_in_g(p.gn.g)
+                            .into_iter()
+                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(v))
+                            .map(|p_iter| TheCellAndTheValue {
+                                the_cell: p_iter,
+                                the_value: vec![v],
                             })
-                        } else {
-                            None
+                            .collect::<Vec<TheCellAndTheValue>>();
+
+                        InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
                         }
-                    }
-                })
+                    })
+            })
         })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        let mut r: String = "".to_string();
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&format!(
-            "的所有可能 {:?} 在 R{:?} 内都只在 G{:?} 中，推导出：",
-            inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.rc.c + 1,
-            inference_result.condition[0].the_cell.gn.g + 1
-        ));
-
-        if inference_result.conclusion_remove_drafts.is_some() {
+        let mut r = format!(
+            "{} 的所有可能 {:?} 在 R{:?} 内都只在 G{:?} 中，推导出：",
             inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+                .condition
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect::<Vec<String>>()
+                .join(" "),
+            inference_result.condition[0].the_value,
+            inference_result.condition[0].the_cell.rc.r + 1,
+            inference_result.condition[0].the_cell.gn.g + 1
+        );
+
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let removed_cells: Vec<String> = conclusion_remove_drafts
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
             r.push_str(&format!(
-                "均不能填写 {:?} 。",
+                "{}均不能填写 {:?}。",
+                removed_cells.join(" "),
                 inference_result.condition[0].the_value
             ));
         }
@@ -565,78 +547,72 @@ struct BoxUniqueDraftByColExclusionInference;
 impl Inference for BoxUniqueDraftByColExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
-            CellValue::iter()
-                .filter_map(|v| {
-                    let tmp: Vec<&Cell> = vc
-                        .iter()
-                        .filter_map(|&p| p.drafts.is_contain(v).then_some(p))
-                        .collect::<Vec<&Cell>>();
-                    (tmp.len() != 0).then_some((v, tmp))
-                })
-                .find_map(|(v, vp)| {
-                    {
-                        let vg = field.collect_all_drafts_cells_in_g(vp[0].gn.g);
-                        // 条件1：该列内的值都在同一个宫内
-                        let ret1 = !vp.iter().any(|&p| (p.gn.g != vp[0].gn.g));
+            CellValue::iter().find_map(|v| {
+                vc.iter()
+                    .filter(|&p| p.drafts.is_contain(v))
+                    .find(|&p| {
+                        let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
+                        // 条件1：该行内的值都在同一个宫内
+                        let all_in_same_grid = vc.iter().all(|&p_iter| p_iter.gn.g == p.gn.g);
                         // 条件2：第一个值所在的宫，在其他列内有值
-                        let ret2 = vg
+                        let others_in_same_grid = vg
                             .iter()
-                            .filter_map(|&vr_p_iter| {
-                                ((vr_p_iter.rc.c != vp[0].rc.c) && vr_p_iter.drafts.is_contain(v))
-                                    .then_some(vr_p_iter)
+                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(v));
+                        all_in_same_grid && others_in_same_grid
+                    })
+                    .map(|p| {
+                        let condition = vc
+                            .iter()
+                            .filter(|&p_iter| p_iter.drafts.is_contain(v))
+                            .map(|p_iter| TheCellAndTheValue {
+                                the_cell: p_iter,
+                                the_value: vec![v],
                             })
-                            .collect::<Vec<&Cell>>();
-                        if ret1 && ret2.len() != 0 {
-                            Some(InferenceResult {
-                                inference: self,
-                                condition: vp
-                                    .iter()
-                                    .map(|&p| TheCellAndTheValue {
-                                        the_cell: p,
-                                        the_value: vec![v],
-                                    })
-                                    .collect::<Vec<TheCellAndTheValue>>(),
-                                conclusion_set_value: None,
-                                conclusion_remove_drafts: Some(
-                                    ret2.iter()
-                                        .map(|&p| TheCellAndTheValue {
-                                            the_cell: p,
-                                            the_value: vec![v],
-                                        })
-                                        .collect::<Vec<TheCellAndTheValue>>(),
-                                ),
+                            .collect::<Vec<TheCellAndTheValue>>();
+
+                        let conclusion = field
+                            .collect_all_drafts_cells_in_g(p.gn.g)
+                            .into_iter()
+                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(v))
+                            .map(|p_iter| TheCellAndTheValue {
+                                the_cell: p_iter,
+                                the_value: vec![v],
                             })
-                        } else {
-                            None
+                            .collect::<Vec<TheCellAndTheValue>>();
+
+                        InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
                         }
-                    }
-                })
+                    })
+            })
         })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        let mut r: String = "".to_string();
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&format!(
-            "的所有可能 {:?} 在 C{:?} 内都只在 G{:?} 中，推导出：",
+        let mut r = format!(
+            "{} 的所有可能 {:?} 在 C{:?} 内都只在 G{:?} 中，推导出：",
+            inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect::<Vec<String>>()
+                .join(" "),
             inference_result.condition[0].the_value,
             inference_result.condition[0].the_cell.rc.c + 1,
             inference_result.condition[0].the_cell.gn.g + 1
-        ));
+        );
 
-        if inference_result.conclusion_remove_drafts.is_some() {
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
             r.push_str(&format!(
-                "均不能填写 {:?} 。",
+                "{}均不能填写 {:?}。",
+                removed_cells.join(" "),
                 inference_result.condition[0].the_value
             ));
         }
@@ -645,141 +621,302 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
     }
 }
 
-/// 显性数对排除法（行），在某一行中，存在2/3/4/5数对时，排除该行中其余数对草稿数
+/// 显性数对排除法（行），在某一行中，存在2/3/4数对时，排除该行中其余数对草稿数
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
 struct RowExplicitPairExclusionInference;
 impl Inference for RowExplicitPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        // 定义子函数，将一个集合拆分成X和剩余部分的两个集合，且 2<=X<=4
-        // 这里生成长度为2/3/4的所有组合的数组索引
-        fn generate_combinations(
-            len: usize,
-            size: usize,
-            current: usize,
-            path: &mut Vec<usize>,
-            all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
-        ) {
-            // 剪枝：当数对和需要组合的长度相等时，直接返回，没有必要进行判断了
-            if path.len() == len {
-                return;
-            }
-            if path.len() == size {
-                let mut remaining = Vec::new();
-                for set in 0..len {
-                    if !path.contains(&set) {
-                        remaining.push(set);
-                    }
-                }
-                all_combinations.push((path.clone(), remaining));
-                return;
-            }
-            for i in current..len {
-                path.push(i);
-                generate_combinations(len, size, i + 1, path, all_combinations);
-                path.pop();
-            }
-        }
-
-        // field.iter_all_drafts_cells_by_rc().for_each(|vr| {
         for vr in field.iter_all_drafts_cells_by_rc() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
                 let mut paths = Vec::new();
-                generate_combinations(vr.len(), size, 0, &mut paths, &mut all_combinations);
+                crate::utils::generate_combinations(
+                    vr.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
             }
 
             for (combo, rest) in all_combinations {
-                let mut union_set = Drafts::default();
-                for set in &combo {
-                    union_set = union_set.union(vr[*set].drafts);
-                }
-                let union_set_vec = union_set.to_vec();
+                let union_drafts: Drafts = combo
+                    .iter()
+                    .map(|&i| vr[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
-                if union_set_vec.len() == combo.len() {
-                    for tmp in &union_set_vec {
-                        let mut tmp_ret = Vec::new();
-                        for tmp2 in &rest {
-                            if vr[*tmp2].drafts.is_contain(*tmp) {
-                                tmp_ret.push(vr[*tmp2]);
-                            }
-                        }
-                        if !tmp_ret.is_empty() {
-                            let condition = combo
+                if union_drafts_vec.len() == combo.len() {
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vr[i],
+                            the_value: union_drafts_vec.clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                        .iter()
+                        .filter_map(|&i| {
+                            if vr[i]
+                                .drafts
+                                .to_vec()
                                 .iter()
-                                .map(|tmp4| TheCellAndTheValue {
-                                    the_cell: vr[*tmp4],
-                                    the_value: union_set_vec.clone(),
+                                .any(|&val| union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vr[i],
+                                    the_value: union_drafts_vec.clone(),
                                 })
-                                .collect();
-                            let conclusion = Some(
-                                tmp_ret
-                                    .iter()
-                                    .map(|tmp5| TheCellAndTheValue {
-                                        the_cell: tmp5,
-                                        the_value: union_set_vec.clone(),
-                                    })
-                                    .collect(),
-                            );
-                            field.print();
-                            println!(
-                                "combo: {:?}, rest: {:?}, union: {:?}, condition: {:?}, conclusion: {:?}",
-                                combo,
-                                rest,
-                                union_set.to_vec(), condition, conclusion
-                            );
-                            return Some(InferenceResult {
-                                inference: self,
-                                condition: condition,
-                                conclusion_set_value: None,
-                                conclusion_remove_drafts: conclusion,
-                            });
-                        }
-                        // 如果tmp_ret是empty，那就不用返回了
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
                     }
                 }
-                // println!(
-                //     "combo: {:?}, rest: {:?}, union: {:?}",
-                //     combo,
-                //     rest,
-                //     union_set.to_vec()
-                // );
             }
         }
         None
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        let mut r: String = "因 ".to_string();
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&"的草稿");
-        inference_result.condition.iter().for_each(|cv| {
-            r.push_str(&format!("{:?} ", cv.the_cell.rc));
-        });
-        r.push_str(&"在同一行内形成了数对，推导出：该行内 ");
-
-        if inference_result.conclusion_remove_drafts.is_some() {
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
 
-            r.push_str(&format!("均不能填写 "));
-            inference_result
-                .conclusion_remove_drafts
-                .as_ref()
-                .unwrap()
+            let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .for_each(|cv| {
-                    r.push_str(&format!("{:?} ", cv.the_value));
-                });
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 的草稿 {} 在同一行 R{:?} 内形成了数对，因此该行 R{:?} 内 {} 不能填写 {}。",
+                condition_cells.join(" "),
+                removed_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                removed_cells.join(" "),
+                removed_values.join(" ")
+            );
         }
 
-        r
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// 显性数对排除法（列），在某一列中，存在2/3/4数对时，排除该列中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
+struct ColExplicitPairExclusionInference;
+impl Inference for ColExplicitPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        for vc in field.iter_all_drafts_cells_by_cr() {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                crate::utils::generate_combinations(
+                    vc.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
+            }
+
+            for (combo, rest) in all_combinations {
+                let union_drafts: Drafts = combo
+                    .iter()
+                    .map(|&i| vc[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let union_drafts_vec = union_drafts.to_vec();
+                // 检查并集的数量是否等于集合的数量
+                if union_drafts_vec.len() == combo.len() {
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vc[i],
+                            the_value: union_drafts_vec.clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                        .iter()
+                        .filter_map(|&i| {
+                            if vc[i]
+                                .drafts
+                                .to_vec()
+                                .iter()
+                                .any(|&val| union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vc[i],
+                                    the_value: union_drafts_vec.clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let removed_cells: Vec<String> = conclusion_remove_drafts
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 的草稿 {} 在同一列 C{:?} 内形成了数对，因此该列 C{:?} 内 {} 不能填写 {}。",
+                condition_cells.join(" "),
+                removed_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                removed_cells.join(" "),
+                removed_values.join(" ")
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// 显性数对排除法（宫），在某一列中，存在2/3/4数对时，排除该列中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
+struct GridExplicitPairExclusionInference;
+impl Inference for GridExplicitPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        for vg in field.iter_all_drafts_cells_by_gn() {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                crate::utils::generate_combinations(
+                    vg.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
+            }
+
+            for (combo, rest) in all_combinations {
+                let union_drafts: Drafts = combo
+                    .iter()
+                    .map(|&i| vg[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let union_drafts_vec = union_drafts.to_vec();
+                // 检查并集的数量是否等于集合的数量
+                if union_drafts_vec.len() == combo.len() {
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vg[i],
+                            the_value: union_drafts_vec.clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                        .iter()
+                        .filter_map(|&i| {
+                            if vg[i]
+                                .drafts
+                                .to_vec()
+                                .iter()
+                                .any(|&val| union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vg[i],
+                                    the_value: union_drafts_vec.clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .collect();
+
+            let removed_cells: Vec<String> = conclusion_remove_drafts
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 的草稿 {} 在同一宫 G{:?} 内形成了数对，因此该宫 G{:?} 内 {} 不能填写 {}。",
+                condition_cells.join(" "),
+                removed_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.gn.g + 1,
+                conclusion_remove_drafts[0].the_cell.gn.g + 1,
+                removed_cells.join(" "),
+                removed_values.join(" ")
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
     }
 }
