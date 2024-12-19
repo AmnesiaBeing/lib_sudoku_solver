@@ -1,5 +1,3 @@
-use std::{fmt::write, hash::Hash};
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,

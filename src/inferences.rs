@@ -31,6 +31,7 @@ impl InferenceSet {
                 Box::new(RowUniqueDraftByGridInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
                 Box::new(BoxUniqueDraftByRowExclusionInference),
+                // Box::new(RowExplicitPairExclusionInference),
             ],
         }
     }
@@ -55,7 +56,7 @@ impl InferenceSet {
                 .iter()
                 .for_each(|cv| {
                     let p = ret.get_cell_mut_by_coords(Coords::RC((cv.the_cell).rc));
-                    p.drafts.remove_draft(cv.the_value[0]);
+                    cv.the_value.iter().for_each(|&v| p.drafts.remove_draft(v));
                 })
         }
         ret
@@ -367,12 +368,12 @@ impl Inference for RowUniqueDraftByGridInference {
         inference_result.condition.iter().for_each(|cv| {
             r.push_str(&format!("{:?} ", cv.the_cell.rc));
         });
-        format!(
+        r.push_str(&format!(
             "的所有可能 {:?} 在 G{:?} 内都只在 R{:?} 中，推导出：",
             inference_result.condition[0].the_value,
             inference_result.condition[0].the_cell.gn.g + 1,
             inference_result.condition[0].the_cell.rc.r + 1
-        );
+        ));
 
         if inference_result.conclusion_remove_drafts.is_some() {
             inference_result
@@ -448,12 +449,12 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
         inference_result.condition.iter().for_each(|cv| {
             r.push_str(&format!("{:?} ", cv.the_cell.rc));
         });
-        format!(
+        r.push_str(&format!(
             "的所有可能 {:?} 在 G{:?} 内都只在 C{:?} 中，推导出：",
             inference_result.condition[0].the_value,
             inference_result.condition[0].the_cell.gn.g + 1,
             inference_result.condition[0].the_cell.rc.c + 1
-        );
+        ));
 
         if inference_result.conclusion_remove_drafts.is_some() {
             inference_result
@@ -533,12 +534,12 @@ impl Inference for BoxUniqueDraftByRowExclusionInference {
         inference_result.condition.iter().for_each(|cv| {
             r.push_str(&format!("{:?} ", cv.the_cell.rc));
         });
-        format!(
+        r.push_str(&format!(
             "的所有可能 {:?} 在 R{:?} 内都只在 G{:?} 中，推导出：",
             inference_result.condition[0].the_value,
             inference_result.condition[0].the_cell.rc.c + 1,
             inference_result.condition[0].the_cell.gn.g + 1
-        );
+        ));
 
         if inference_result.conclusion_remove_drafts.is_some() {
             inference_result
@@ -618,12 +619,12 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
         inference_result.condition.iter().for_each(|cv| {
             r.push_str(&format!("{:?} ", cv.the_cell.rc));
         });
-        format!(
+        r.push_str(&format!(
             "的所有可能 {:?} 在 C{:?} 内都只在 G{:?} 中，推导出：",
             inference_result.condition[0].the_value,
             inference_result.condition[0].the_cell.rc.c + 1,
             inference_result.condition[0].the_cell.gn.g + 1
-        );
+        ));
 
         if inference_result.conclusion_remove_drafts.is_some() {
             inference_result
@@ -658,6 +659,10 @@ impl Inference for RowExplicitPairExclusionInference {
             path: &mut Vec<usize>,
             all_combinations: &mut Vec<(Vec<usize>, Vec<usize>)>,
         ) {
+            // 剪枝：当数对和需要组合的长度相等时，直接返回，没有必要进行判断了
+            if path.len() == len {
+                return;
+            }
             if path.len() == size {
                 let mut remaining = Vec::new();
                 for set in 0..len {
@@ -675,49 +680,103 @@ impl Inference for RowExplicitPairExclusionInference {
             }
         }
 
-        field.iter_all_drafts_cells_by_rc().find_map(|vr| {
+        // field.iter_all_drafts_cells_by_rc().for_each(|vr| {
+        for vr in field.iter_all_drafts_cells_by_rc() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
                 let mut paths = Vec::new();
+                println!("size: {:?}, paths: {:?}", size, paths);
                 generate_combinations(vr.len(), size, 0, &mut paths, &mut all_combinations);
             }
+
+            println!("all: {:?}", all_combinations);
             for (combo, rest) in all_combinations {
                 let mut union_set = Drafts::default();
                 for set in &combo {
                     union_set = union_set.union(vr[*set].drafts);
                 }
+                println!(
+                    "combo: {:?}, rest: {:?}, union: {:?}",
+                    combo,
+                    rest,
+                    union_set.to_vec()
+                );
+                let union_set_vec = union_set.to_vec();
                 // 检查并集的数量是否等于集合的数量
-                if union_set.len() == combo.len() {
-                    // 收集剩余格子内，所有这个union的值，当然，如果是空集，返回None
-                    // union_set
-                    //     .to_vec()
-                    //     .iter()
-                    //     .filter_map(|v| rest.iter().filter_map(|rr| vr[*rr].drafts.is_contain(**v)));
-                    for tmp in union_set.to_vec() {
-                        for tmp2 in rest{
-                            if vr[tmp2].drafts.is_contain(tmp) {
-                                
+                if union_set_vec.len() == combo.len() {
+                    for tmp in &union_set_vec {
+                        let mut tmp_ret = Vec::new();
+                        for tmp2 in &rest {
+                            if vr[*tmp2].drafts.is_contain(*tmp) {
+                                tmp_ret.push(vr[*tmp2]);
                             }
                         }
+                        if !tmp_ret.is_empty() {
+                            let condition = combo
+                                .iter()
+                                .map(|tmp4| TheCellAndTheValue {
+                                    the_cell: vr[*tmp4],
+                                    the_value: union_set_vec.clone(),
+                                })
+                                .collect();
+                            let conclusion = Some(
+                                tmp_ret
+                                    .iter()
+                                    .map(|tmp5| TheCellAndTheValue {
+                                        the_cell: tmp5,
+                                        the_value: union_set_vec.clone(),
+                                    })
+                                    .collect(),
+                            );
+                            println!("{:?}, {:?}", condition, conclusion);
+                            return Some(InferenceResult {
+                                inference: self,
+                                condition: condition,
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: conclusion,
+                            });
+                        }
+                        // 如果tmp_ret是empty，那就不用返回了
                     }
                 }
-                // 最后要得到
-                // InferenceResult{
-                    // condition: Vec<CV{
-                        // the_cell: combo
-                        // the_value: union
-                    // }
-                    // set_value: None
-                    // remove_draft: rest
-                // }
-                // Some(InferenceResult)
             }
-            None
-        });
-        todo!()
+            // None
+        }
+        None
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        todo!()
+        let mut r: String = "因 ".to_string();
+        inference_result.condition.iter().for_each(|cv| {
+            r.push_str(&format!("{:?} ", cv.the_cell.rc));
+        });
+        r.push_str(&"的草稿");
+        inference_result.condition.iter().for_each(|cv| {
+            r.push_str(&format!("{:?} ", cv.the_cell.rc));
+        });
+        r.push_str(&"在同一行内形成了数对，推导出：该行内 ");
+
+        if inference_result.conclusion_remove_drafts.is_some() {
+            inference_result
+                .conclusion_remove_drafts
+                .as_ref()
+                .unwrap()
+                .iter()
+                .for_each(|cv| {
+                    r.push_str(&format!("{:?} ", cv.the_cell.rc));
+                });
+
+            r.push_str(&format!("均不能填写 "));
+            inference_result
+                .conclusion_remove_drafts
+                .as_ref()
+                .unwrap()
+                .iter()
+                .for_each(|cv| {
+                    r.push_str(&format!("{:?} ", cv.the_value));
+                });
+        }
+
+        r
     }
 }
