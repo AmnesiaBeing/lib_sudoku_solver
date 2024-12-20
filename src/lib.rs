@@ -4,7 +4,11 @@ pub mod utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::{inferences::InferenceSet, types::Field, utils::generate_combinations};
+    use crate::{
+        inferences::InferenceSet,
+        types::{Field, RCCoords},
+        utils::generate_combinations,
+    };
 
     fn sovle(field: &Field) {
         let mut field = field.clone();
@@ -15,16 +19,24 @@ mod tests {
             match inference {
                 Some(inference) => {
                     println!("{:?}", inference);
-                    field = InferenceSet::apply(&field, inference);
-                    // field.print();
-                    if field.check_if_finish() {
-                        println!("推导完毕!");
+                    let newfield = InferenceSet::apply(&field, inference);
+                    if let Some(conflict) = newfield.find_conflict() {
                         field.print();
+                        newfield.print();
+                        println!("conflict: {:?}", conflict);
                         break;
+                    } else {
+                        field = newfield;
+                        if field.check_if_finish() {
+                            println!("推导完毕!");
+                            field.print();
+                            break;
+                        }
                     }
                 }
                 None => {
                     println!("无法推导!");
+                    field.print();
                     break;
                 }
             }
@@ -102,7 +114,17 @@ mod tests {
     }
 
     #[test]
-    fn generate_combinations_test(){
+    fn test8() {
+        let field = Field::initial_by_string(
+            &"900400613320190700000000009000017008000000000700360000800000000009045086253001004"
+                .to_string(),
+        )
+        .unwrap();
+        sovle(&field);
+    }
+
+    #[test]
+    fn generate_combinations_test() {
         let mut all_combinations = Vec::new();
         for size in 2..=4 {
             let mut paths = Vec::new();

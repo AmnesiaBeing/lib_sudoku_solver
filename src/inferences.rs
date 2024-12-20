@@ -30,7 +30,7 @@ impl InferenceSet {
                 Box::new(OnlyOneRightInGridInference),
                 Box::new(RowUniqueDraftByGridInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
-                Box::new(BoxUniqueDraftByRowExclusionInference),
+                Box::new(GridUniqueDraftByRowExclusionInference),
                 Box::new(RowExplicitPairExclusionInference),
                 Box::new(ColExplicitPairExclusionInference),
                 Box::new(GridExplicitPairExclusionInference),
@@ -132,8 +132,8 @@ impl Inference for OnlyOneRightInRowInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vr.iter()
-                            .all(|p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(*v)))
+                        vr.iter()
+                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -189,8 +189,8 @@ impl Inference for OnlyOneRightInColInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vc.iter()
-                            .all(|p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(*v)))
+                        vc.iter()
+                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -246,8 +246,8 @@ impl Inference for OnlyOneRightInGridInference {
                     .to_vec()
                     .iter()
                     .find(|&v| {
-                        !(vg.iter()
-                            .all(|p_iter| p_iter.gn.n != p.gn.n && p_iter.drafts.is_contain(*v)))
+                        vg.iter()
+                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCellAndTheValue {
@@ -354,7 +354,7 @@ impl Inference for RowUniqueDraftByGridInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", cv.the_cell.gn))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value[0],
@@ -439,7 +439,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", cv.the_cell.gn))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value[0],
@@ -464,8 +464,8 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
 }
 
 /// 当一行的草稿数正好在一宫时，排除该宫的其他草稿数
-struct BoxUniqueDraftByRowExclusionInference;
-impl Inference for BoxUniqueDraftByRowExclusionInference {
+struct GridUniqueDraftByRowExclusionInference;
+impl Inference for GridUniqueDraftByRowExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
             CellValue::iter().find_map(|v| {
