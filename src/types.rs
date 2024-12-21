@@ -131,6 +131,26 @@ impl Drafts {
         }
         ret
     }
+
+    pub fn intersect(&self, other: Drafts) -> Drafts {
+        let mut ret: Drafts = Drafts::default();
+        for i in 0..9 {
+            if self.drafts[i] && other.drafts[i] {
+                ret.drafts[i] = true;
+            }
+        }
+        ret
+    }
+
+    pub fn subtract(&self, other: Drafts) -> Drafts {
+        let mut ret: Drafts = Drafts::default();
+        for i in 0..9 {
+            if self.drafts[i] && !other.drafts[i] {
+                ret.drafts[i] = true;
+            }
+        }
+        ret
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]

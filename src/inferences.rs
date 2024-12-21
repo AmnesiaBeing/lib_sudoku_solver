@@ -31,9 +31,12 @@ impl InferenceSet {
                 Box::new(RowUniqueDraftByGridInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
                 Box::new(GridUniqueDraftByRowExclusionInference),
-                Box::new(RowExplicitPairExclusionInference),
-                Box::new(ColExplicitPairExclusionInference),
-                Box::new(GridExplicitPairExclusionInference),
+                Box::new(RowExplicitNakedPairExclusionInference),
+                Box::new(ColExplicitNakedPairExclusionInference),
+                Box::new(GridExplicitNakedPairExclusionInference),
+                Box::new(RowExplicitHiddenPairExclusionInference),
+                Box::new(ColExplicitHiddenPairExclusionInference),
+                Box::new(GridExplicitHiddenPairExclusionInference),
             ],
         }
     }
@@ -368,7 +371,7 @@ impl Inference for RowUniqueDraftByGridInference {
                 .map(|cv| format!("{:?}", cv.the_cell.rc))
                 .collect();
             r.push_str(&format!(
-                "{} 均不能填写 {:?}。",
+                "{} 均不能填写 {:?}",
                 removed_cells.join(" "),
                 inference_result.condition[0].the_value[0]
             ));
@@ -453,7 +456,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                 .map(|cv| format!("{:?}", cv.the_cell.rc))
                 .collect();
             r.push_str(&format!(
-                "{} 均不能填写 {:?}。",
+                "{} 均不能填写 {:?}",
                 removed_cells.join(" "),
                 inference_result.condition[0].the_value[0]
             ));
@@ -532,7 +535,7 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                 .map(|cv| format!("{:?}", cv.the_cell.rc))
                 .collect();
             r.push_str(&format!(
-                "{}均不能填写 {:?}。",
+                "{}均不能填写 {:?}",
                 removed_cells.join(" "),
                 inference_result.condition[0].the_value
             ));
@@ -611,7 +614,7 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
                 .map(|cv| format!("{:?}", cv.the_cell.rc))
                 .collect();
             r.push_str(&format!(
-                "{}均不能填写 {:?}。",
+                "{}均不能填写 {:?}",
                 removed_cells.join(" "),
                 inference_result.condition[0].the_value
             ));
@@ -623,8 +626,8 @@ impl Inference for BoxUniqueDraftByColExclusionInference {
 
 /// 显性数对排除法（行），在某一行中，存在2/3/4数对时，排除该行中其余数对草稿数
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
-struct RowExplicitPairExclusionInference;
-impl Inference for RowExplicitPairExclusionInference {
+struct RowExplicitNakedPairExclusionInference;
+impl Inference for RowExplicitNakedPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         for vr in field.iter_all_drafts_cells_by_rc() {
             let mut all_combinations = Vec::new();
@@ -707,7 +710,7 @@ impl Inference for RowExplicitPairExclusionInference {
                 .collect();
 
             return format!(
-                "{} 的草稿 {} 在同一行 R{:?} 内形成了数对，因此该行 R{:?} 内 {} 不能填写 {}。",
+                "{} 的草稿 {} 在同一 R{:?} 内形成了数对，因此该 R{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
                 conclusion_remove_drafts[0].the_cell.rc.r + 1,
@@ -723,8 +726,8 @@ impl Inference for RowExplicitPairExclusionInference {
 
 /// 显性数对排除法（列），在某一列中，存在2/3/4数对时，排除该列中其余数对草稿数
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
-struct ColExplicitPairExclusionInference;
-impl Inference for ColExplicitPairExclusionInference {
+struct ColExplicitNakedPairExclusionInference;
+impl Inference for ColExplicitNakedPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         for vc in field.iter_all_drafts_cells_by_cr() {
             let mut all_combinations = Vec::new();
@@ -807,7 +810,7 @@ impl Inference for ColExplicitPairExclusionInference {
                 .collect();
 
             return format!(
-                "{} 的草稿 {} 在同一列 C{:?} 内形成了数对，因此该列 C{:?} 内 {} 不能填写 {}。",
+                "{} 的草稿 {} 在同一 C{:?} 内形成了数对，因此该 C{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
                 conclusion_remove_drafts[0].the_cell.rc.c + 1,
@@ -823,8 +826,8 @@ impl Inference for ColExplicitPairExclusionInference {
 
 /// 显性数对排除法（宫），在某一列中，存在2/3/4数对时，排除该列中其余数对草稿数
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
-struct GridExplicitPairExclusionInference;
-impl Inference for GridExplicitPairExclusionInference {
+struct GridExplicitNakedPairExclusionInference;
+impl Inference for GridExplicitNakedPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         for vg in field.iter_all_drafts_cells_by_gn() {
             let mut all_combinations = Vec::new();
@@ -907,12 +910,333 @@ impl Inference for GridExplicitPairExclusionInference {
                 .collect();
 
             return format!(
-                "{} 的草稿 {} 在同一宫 G{:?} 内形成了数对，因此该宫 G{:?} 内 {} 不能填写 {}。",
+                "{} 的草稿 {} 在同一 G{:?} 内形成了数对，因此该 G{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
                 conclusion_remove_drafts[0].the_cell.gn.g + 1,
                 conclusion_remove_drafts[0].the_cell.gn.g + 1,
                 removed_cells.join(" "),
+                removed_values.join(" ")
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// 隐性数对排除法（行），在某一行中，存在2/3/4数对时，排除该行中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
+struct RowExplicitHiddenPairExclusionInference;
+impl Inference for RowExplicitHiddenPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        for vr in field.iter_all_drafts_cells_by_rc() {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                crate::utils::generate_combinations(
+                    vr.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
+            }
+
+            for (combo, rest) in all_combinations {
+                let rest_union_drafts: Drafts = rest
+                    .iter()
+                    .map(|&i| vr[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let rest_union_drafts_vec = rest_union_drafts.to_vec();
+                // 检查剩余的并集数量是否等于整个候选数-组合的数量
+                if rest_union_drafts_vec.len() == vr.len() - combo.len() {
+                    let combo_union_drafts = combo
+                        .iter()
+                        .map(|&i| vr[i].drafts.clone())
+                        .reduce(|a, b| a.union(b))
+                        .unwrap_or_default();
+                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vr[i],
+                            the_value: hidden_pair_drafts.to_vec().clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .filter_map(|&i| {
+                            if vr[i]
+                                .drafts
+                                .to_vec()
+                                .iter()
+                                .any(|&val| rest_union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vr[i],
+                                    the_value: rest_union_drafts.to_vec().clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let condition_values: Vec<String> = inference_result.condition[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 在 R{:?} 内形成了隐性数对 {} ，因此该 R{:?} 内 {} 不能填写 {} ",
+                condition_cells.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                condition_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                condition_cells.join(" "),
+                removed_values.join(" ")
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// 隐性数对排除法（列），在某一列中，存在2/3/4数对时，排除该行中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
+struct ColExplicitHiddenPairExclusionInference;
+impl Inference for ColExplicitHiddenPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        for vc in field.iter_all_drafts_cells_by_cr() {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                crate::utils::generate_combinations(
+                    vc.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
+            }
+
+            for (combo, rest) in all_combinations {
+                let rest_union_drafts: Drafts = rest
+                    .iter()
+                    .map(|&i| vc[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let rest_union_drafts_vec = rest_union_drafts.to_vec();
+                // 检查剩余的并集数量是否等于整个候选数-组合的数量
+                if rest_union_drafts_vec.len() == vc.len() - combo.len() {
+                    let combo_union_drafts = combo
+                        .iter()
+                        .map(|&i| vc[i].drafts.clone())
+                        .reduce(|a, b| a.union(b))
+                        .unwrap_or_default();
+                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vc[i],
+                            the_value: hidden_pair_drafts.to_vec().clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .filter_map(|&i| {
+                            if vc[i]
+                                .drafts
+                                .to_vec()
+                                .iter()
+                                .any(|&val| rest_union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vc[i],
+                                    the_value: rest_union_drafts.to_vec().clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let condition_values: Vec<String> = inference_result.condition[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 在 C{:?} 内形成了隐性数对 {} ，因此该 C{:?} 内 {} 不能填写 {} ",
+                condition_cells.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                condition_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                condition_cells.join(" "),
+                removed_values.join(" ")
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// 隐性数对排除法（宫），在某一宫中，存在2/3/4数对时，排除该行中其余数对草稿数
+/// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
+struct GridExplicitHiddenPairExclusionInference;
+impl Inference for GridExplicitHiddenPairExclusionInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        for vg in field.iter_all_drafts_cells_by_gn() {
+            let mut all_combinations = Vec::new();
+            for size in 2..=4 {
+                let mut paths = Vec::new();
+                crate::utils::generate_combinations(
+                    vg.len(),
+                    size,
+                    0,
+                    &mut paths,
+                    &mut all_combinations,
+                );
+            }
+
+            for (combo, rest) in all_combinations {
+                let rest_union_drafts: Drafts = rest
+                    .iter()
+                    .map(|&i| vg[i].drafts.clone())
+                    .reduce(|a, b| a.union(b))
+                    .unwrap_or_default();
+                let rest_union_drafts_vec = rest_union_drafts.to_vec();
+                // 检查剩余的并集数量是否等于整个候选数-组合的数量
+                if rest_union_drafts_vec.len() == vg.len() - combo.len() {
+                    let combo_union_drafts = combo
+                        .iter()
+                        .map(|&i| vg[i].drafts.clone())
+                        .reduce(|a, b| a.union(b))
+                        .unwrap_or_default();
+                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .map(|&i| TheCellAndTheValue {
+                            the_cell: &vg[i],
+                            the_value: hidden_pair_drafts.to_vec().clone(),
+                        })
+                        .collect();
+                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                        .iter()
+                        .filter_map(|&i| {
+                            if vg[i]
+                                .drafts
+                                .to_vec()
+                                .iter()
+                                .any(|&val| rest_union_drafts_vec.contains(&val))
+                            {
+                                Some(TheCellAndTheValue {
+                                    the_cell: &vg[i],
+                                    the_value: rest_union_drafts.to_vec().clone(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !conclusion.is_empty() {
+                        return Some(InferenceResult {
+                            inference: self,
+                            condition,
+                            conclusion_set_value: None,
+                            conclusion_remove_drafts: Some(conclusion),
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let condition_values: Vec<String> = inference_result.condition[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            let removed_values: Vec<String> = conclusion_remove_drafts[0]
+                .the_value
+                .iter()
+                .map(|cv| format!("{:?}", cv))
+                .collect();
+
+            return format!(
+                "{} 在 C{:?} 内形成了隐性数对 {} ，因此该 C{:?} 内 {} 不能填写 {} ",
+                condition_cells.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                condition_values.join(" "),
+                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                condition_cells.join(" "),
                 removed_values.join(" ")
             );
         }

@@ -124,12 +124,21 @@ mod tests {
     }
 
     #[test]
+    fn test9() {
+        let field = Field::initial_by_string(
+            &"400090708007810400080060050800130007000070000170028005068051024513249876042080501"
+                .to_string(),
+        )
+        .unwrap();
+        sovle(&field);
+    }
+
+    #[test]
     fn generate_combinations_test() {
         let mut all_combinations = Vec::new();
-        for size in 2..=4 {
+        for size in 3..=7 {
             let mut paths = Vec::new();
-            println!("size: {:?}, paths: {:?}", size, paths);
-            generate_combinations(3, size, 0, &mut paths, &mut all_combinations);
+            generate_combinations(5, size, 0, &mut paths, &mut all_combinations);
         }
         println!("{:?}", all_combinations);
     }
