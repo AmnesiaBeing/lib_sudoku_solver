@@ -1,8 +1,4 @@
-use std::collections::HashMap;
-
-use crate::types::{
-    Cell, CellStatus, CellValue, Coords, Drafts, Field, GNCoords, RCCoords, TheCellAndTheValue,
-};
+use crate::{types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, TheCellAndTheValue}, utils::generate_combinations};
 
 pub struct InferenceResult<'a> {
     inference: &'a dyn Inference,
@@ -28,9 +24,10 @@ impl InferenceSet {
                 Box::new(OnlyOneRightInRowInference),
                 Box::new(OnlyOneRightInColInference),
                 Box::new(OnlyOneRightInGridInference),
-                Box::new(RowUniqueDraftByGridInference),
+                Box::new(RowUniqueDraftByGridExclusionInference),
                 Box::new(ColUniqueDraftByGridExclusionInference),
                 Box::new(GridUniqueDraftByRowExclusionInference),
+                Box::new(GridUniqueDraftByColExclusionInference),
                 Box::new(RowExplicitNakedPairExclusionInference),
                 Box::new(ColExplicitNakedPairExclusionInference),
                 Box::new(GridExplicitNakedPairExclusionInference),
@@ -297,8 +294,8 @@ impl Inference for OnlyOneRightInGridInference {
 }
 
 /// 当一宫内的某种草稿值当且仅当在同一行时，可以排除该行内其余格子的该草稿值
-struct RowUniqueDraftByGridInference;
-impl Inference for RowUniqueDraftByGridInference {
+struct RowUniqueDraftByGridExclusionInference;
+impl Inference for RowUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
             CellValue::iter().find_map(|v| {
@@ -546,8 +543,8 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
 }
 
 /// 当一列的草稿数正好在一宫时，排除该宫的其他草稿数
-struct BoxUniqueDraftByColExclusionInference;
-impl Inference for BoxUniqueDraftByColExclusionInference {
+struct GridUniqueDraftByColExclusionInference;
+impl Inference for GridUniqueDraftByColExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
             CellValue::iter().find_map(|v| {
@@ -1242,5 +1239,33 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
         }
 
         String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
+    }
+}
+
+/// X-Wings，鱼
+/// X（2<=X<=4）行的某个值可能所在的位置的交集的长度，正好也为X，说明形成了正交，可排除列中的其他格子的草稿数（反过来也同理）
+struct XWingsInference;
+impl Inference for XWingsInference {
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        let mut all_combinations = Vec::new();
+        for size in 2..=4 {
+            let mut paths = Vec::new();
+            crate::utils::generate_combinations(
+                9,
+                size,
+                0,
+                &mut paths,
+                &mut all_combinations,
+            );
+        }
+
+        // 先按行视角来看
+        
+
+        todo!()
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        todo!()
     }
 }

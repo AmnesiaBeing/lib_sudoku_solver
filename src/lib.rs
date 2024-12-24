@@ -6,7 +6,7 @@ pub mod utils;
 mod tests {
     use crate::{
         inferences::InferenceSet,
-        types::{Field, RCCoords},
+        types::Field,
         utils::generate_combinations,
     };
 
@@ -15,8 +15,8 @@ mod tests {
         field.print();
         let ifs = InferenceSet::new();
         loop {
-            let inference = ifs.analyze(&field);
-            match inference {
+            let result = ifs.analyze(&field);
+            match result {
                 Some(inference) => {
                     println!("{:?}", inference);
                     let newfield = InferenceSet::apply(&field, inference);
@@ -134,11 +134,21 @@ mod tests {
     }
 
     #[test]
+    fn test10() {
+        let field = Field::initial_by_string(
+            &"000000000000010000012304560000000000035000780081020350000000000057000630063807210"
+                .to_string(),
+        )
+        .unwrap();
+        sovle(&field);
+    }
+
+    #[test]
     fn generate_combinations_test() {
         let mut all_combinations = Vec::new();
-        for size in 3..=7 {
+        for size in 2..=4 {
             let mut paths = Vec::new();
-            generate_combinations(5, size, 0, &mut paths, &mut all_combinations);
+            generate_combinations(9, size, 0, &mut paths, &mut all_combinations);
         }
         println!("{:?}", all_combinations);
     }
