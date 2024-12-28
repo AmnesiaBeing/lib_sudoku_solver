@@ -616,6 +616,24 @@ impl Field {
             .collect()
     }
 
+    /// 按行遍历包含指定V的草稿单元格
+    pub fn iter_all_drafts_cells_by_rc_contain_v(
+        &self,
+        v: CellValue,
+    ) -> <Vec<Vec<&Cell>> as IntoIterator>::IntoIter {
+        (0..9)
+            .into_iter()
+            .map(|r| {
+                (0..9)
+                    .into_iter()
+                    .map(|c| self.get_cell_ref_by_rc(RCCoords { r, c }))
+                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).drafts.is_contain(v))
+                    .collect()
+            })
+            .collect::<Vec<Vec<&Cell>>>()
+            .into_iter()
+    }
+
     /// 给定一个坐标，根据坐标遍历同一行、同一列、同一宫所有可辐射的单元格（若自身为可操作单元格，则包括自身）
     pub fn collect_all_drafts_cells_by_coords(&self, coords: Coords) -> Vec<&Cell> {
         let RCCoords { r, c } = coords.to_rc_coords();

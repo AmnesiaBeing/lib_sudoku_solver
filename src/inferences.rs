@@ -1,4 +1,7 @@
-use crate::{types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, TheCellAndTheValue}, utils::generate_combinations};
+use crate::{
+    types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, RCCoords, TheCellAndTheValue},
+    utils::generate_combinations,
+};
 
 pub struct InferenceResult<'a> {
     inference: &'a dyn Inference,
@@ -34,6 +37,7 @@ impl InferenceSet {
                 Box::new(RowExplicitHiddenPairExclusionInference),
                 Box::new(ColExplicitHiddenPairExclusionInference),
                 Box::new(GridExplicitHiddenPairExclusionInference),
+                Box::new(XWingsByRowInference),
             ],
         }
     }
@@ -1242,27 +1246,92 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
     }
 }
 
-/// X-Wings，鱼
-/// X（2<=X<=4）行的某个值可能所在的位置的交集的长度，正好也为X，说明形成了正交，可排除列中的其他格子的草稿数（反过来也同理）
-struct XWingsInference;
-impl Inference for XWingsInference {
+/// X-Wing，2行的某个值，只有2个相同的列可以填，可以移除这2列中的其他行的这个值（这里按行迭代）
+struct XWingsByRowInference;
+impl Inference for XWingsByRowInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        let mut all_combinations = Vec::new();
-        for size in 2..=4 {
-            let mut paths = Vec::new();
-            crate::utils::generate_combinations(
-                9,
-                size,
-                0,
-                &mut paths,
-                &mut all_combinations,
-            );
-        }
-
-        // 先按行视角来看
-        
-
-        todo!()
+        CellValue::iter().find_map(|v| {
+            let mut only_two_cell_with_v_in_a_row = Vec::new();
+            for r in 0..9 {
+                let mut cell_with_v_in_a_row = Vec::new();
+                for c in 0..9 {
+                    let p = field.get_cell_ref_by_rc(RCCoords { r, c });
+                    if p.status == CellStatus::DRAFT && p.drafts.is_contain(v) {
+                        cell_with_v_in_a_row.push(p);
+                    }
+                }
+                if cell_with_v_in_a_row.len() == 2 {
+                    let (newc1, newc2) =
+                        (cell_with_v_in_a_row[0].rc.c, cell_with_v_in_a_row[1].rc.c);
+                    if let Some((oldr, oldc1, oldc2)) = only_two_cell_with_v_in_a_row
+                        .iter()
+                        .find(|(_, oldc1, oldc2)| newc1 == *oldc1 && newc2 == *oldc2)
+                    {
+                        // println!("v:{:?}, r:{:?}, oldr:{:?}", v, r, oldr);
+                        let condition = vec![
+                            TheCellAndTheValue {
+                                the_cell: field.get_cell_ref_by_rc(RCCoords {
+                                    r: *oldr,
+                                    c: *oldc1,
+                                }),
+                                the_value: vec![v],
+                            },
+                            TheCellAndTheValue {
+                                the_cell: field.get_cell_ref_by_rc(RCCoords {
+                                    r: *oldr,
+                                    c: *oldc2,
+                                }),
+                                the_value: vec![v],
+                            },
+                            TheCellAndTheValue {
+                                the_cell: field.get_cell_ref_by_rc(RCCoords { r, c: newc1 }),
+                                the_value: vec![v],
+                            },
+                            TheCellAndTheValue {
+                                the_cell: field.get_cell_ref_by_rc(RCCoords { r, c: newc2 }),
+                                the_value: vec![v],
+                            },
+                        ];
+                        let mut conclusion = Vec::new();
+                        for r2 in 0..9 {
+                            if (r2 != r) && (r2 != *oldr) {
+                                let tmp1 = field.get_cell_ref_by_rc(RCCoords { r: r2, c: *oldc1 });
+                                if tmp1.status == CellStatus::DRAFT && tmp1.drafts.is_contain(v) {
+                                    conclusion.push(TheCellAndTheValue {
+                                        the_cell: tmp1,
+                                        the_value: vec![v],
+                                    });
+                                }
+                                let tmp2 = field.get_cell_ref_by_rc(RCCoords { r: r2, c: *oldc2 });
+                                if tmp2.status == CellStatus::DRAFT && tmp2.drafts.is_contain(v) {
+                                    conclusion.push(TheCellAndTheValue {
+                                        the_cell: tmp2,
+                                        the_value: vec![v],
+                                    });
+                                }
+                            }
+                        }
+                        // println!("v:{:?}, r:{:?}, {:?}", v, r, conclusion);
+                        if conclusion.len() != 0 {
+                           return Some(InferenceResult {
+                                inference: self,
+                                condition,
+                                conclusion_set_value: None,
+                                conclusion_remove_drafts: Some(conclusion),
+                            });
+                        }
+                    } else {
+                        // println!("v:{:?}, r:{:?}, {:?}", v, r, cell_with_v_in_a_row);
+                        only_two_cell_with_v_in_a_row.push((
+                            r,
+                            cell_with_v_in_a_row[0].rc.c,
+                            cell_with_v_in_a_row[1].rc.c,
+                        ));
+                    }
+                }
+            }
+            None
+        })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {

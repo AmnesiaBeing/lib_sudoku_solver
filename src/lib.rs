@@ -17,9 +17,9 @@ mod tests {
         loop {
             let result = ifs.analyze(&field);
             match result {
-                Some(inference) => {
-                    println!("{:?}", inference);
-                    let newfield = InferenceSet::apply(&field, inference);
+                Some(result) => {
+                    // println!("{:?}", inference);
+                    let newfield = InferenceSet::apply(&field, result);
                     if let Some(conflict) = newfield.find_conflict() {
                         field.print();
                         newfield.print();
@@ -137,6 +137,16 @@ mod tests {
     fn test10() {
         let field = Field::initial_by_string(
             &"000000000000010000012304560000000000035000780081020350000000000057000630063807210"
+                .to_string(),
+        )
+        .unwrap();
+        sovle(&field);
+    }
+
+    #[test]
+    fn test11() {
+        let field = Field::initial_by_string(
+            &"807530429935427681240900375483652917672193854009874236020340708308710542704200103"
                 .to_string(),
         )
         .unwrap();
