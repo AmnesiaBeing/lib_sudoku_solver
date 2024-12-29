@@ -1,6 +1,9 @@
 use crate::{
     types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, RCCoords, TheCellAndTheValue},
-    utils::generate_combinations,
+    utils::{
+        create_simple_cell_and_value, get_rc_coord_with_direction, get_rc_index_with_direction,
+        IterDirection,
+    },
 };
 
 pub struct InferenceResult<'a> {
@@ -37,7 +40,7 @@ impl InferenceSet {
                 Box::new(RowExplicitHiddenPairExclusionInference),
                 Box::new(ColExplicitHiddenPairExclusionInference),
                 Box::new(GridExplicitHiddenPairExclusionInference),
-                Box::new(XWingsByRowInference),
+                Box::new(XWingsInference),
             ],
         }
     }
@@ -1240,101 +1243,162 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                 condition_cells.join(" "),
                 removed_values.join(" ")
             );
+        } else {
+            String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
         }
-
-        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
     }
 }
 
-/// X-Wing，2行的某个值，只有2个相同的列可以填，可以移除这2列中的其他行的这个值（这里按行迭代）
-struct XWingsByRowInference;
-impl Inference for XWingsByRowInference {
+/// X-Wing，2行/列的某个值，只有2个相同的列/行可以填，可以移除这2列/行中的其他行的这个值（这里按行/列两个方向同时迭代）
+struct XWingsInference;
+impl Inference for XWingsInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        CellValue::iter().find_map(|v| {
-            let mut only_two_cell_with_v_in_a_row = Vec::new();
-            for r in 0..9 {
-                let mut cell_with_v_in_a_row = Vec::new();
-                for c in 0..9 {
-                    let p = field.get_cell_ref_by_rc(RCCoords { r, c });
-                    if p.status == CellStatus::DRAFT && p.drafts.is_contain(v) {
-                        cell_with_v_in_a_row.push(p);
+        // 构造返回条件
+        fn create_condition<'a>(
+            field: &'a Field,
+            coords: [(usize, usize); 4],
+            v: CellValue,
+            direction: &'a IterDirection,
+        ) -> Vec<TheCellAndTheValue<'a>> {
+            coords
+                .iter()
+                .map(|&(coord1, coord2)| {
+                    create_simple_cell_and_value(
+                        field,
+                        get_rc_coord_with_direction(coord1, coord2, direction),
+                        v,
+                    )
+                })
+                .collect()
+        }
+
+        // 构造返回结论
+        fn create_conclusion<'a>(
+            field: &'a Field,
+            (one_index_1, other_index_1): (usize, usize),
+            (one_index_2, other_index_2): (usize, usize),
+            v: CellValue,
+            direction: &'a IterDirection,
+        ) -> Vec<TheCellAndTheValue<'a>> {
+            let mut conclusion = Vec::new();
+            for one_index in 0..9 {
+                if one_index != one_index_1 && one_index != one_index_2 {
+                    let rc1 = get_rc_coord_with_direction(one_index, other_index_1, direction);
+                    let rc2 = get_rc_coord_with_direction(one_index, other_index_2, direction);
+                    let cell1 = field.get_cell_ref_by_rc(rc1);
+                    let cell2 = field.get_cell_ref_by_rc(rc2);
+                    if cell1.status == CellStatus::DRAFT && cell1.drafts.is_contain(v) {
+                        conclusion.push(create_simple_cell_and_value(field, rc1, v));
+                    }
+                    if cell2.status == CellStatus::DRAFT && cell2.drafts.is_contain(v) {
+                        conclusion.push(create_simple_cell_and_value(field, rc2, v));
                     }
                 }
-                if cell_with_v_in_a_row.len() == 2 {
-                    let (newc1, newc2) =
-                        (cell_with_v_in_a_row[0].rc.c, cell_with_v_in_a_row[1].rc.c);
-                    if let Some((oldr, oldc1, oldc2)) = only_two_cell_with_v_in_a_row
-                        .iter()
-                        .find(|(_, oldc1, oldc2)| newc1 == *oldc1 && newc2 == *oldc2)
-                    {
-                        // println!("v:{:?}, r:{:?}, oldr:{:?}", v, r, oldr);
-                        let condition = vec![
-                            TheCellAndTheValue {
-                                the_cell: field.get_cell_ref_by_rc(RCCoords {
-                                    r: *oldr,
-                                    c: *oldc1,
-                                }),
-                                the_value: vec![v],
-                            },
-                            TheCellAndTheValue {
-                                the_cell: field.get_cell_ref_by_rc(RCCoords {
-                                    r: *oldr,
-                                    c: *oldc2,
-                                }),
-                                the_value: vec![v],
-                            },
-                            TheCellAndTheValue {
-                                the_cell: field.get_cell_ref_by_rc(RCCoords { r, c: newc1 }),
-                                the_value: vec![v],
-                            },
-                            TheCellAndTheValue {
-                                the_cell: field.get_cell_ref_by_rc(RCCoords { r, c: newc2 }),
-                                the_value: vec![v],
-                            },
-                        ];
-                        let mut conclusion = Vec::new();
-                        for r2 in 0..9 {
-                            if (r2 != r) && (r2 != *oldr) {
-                                let tmp1 = field.get_cell_ref_by_rc(RCCoords { r: r2, c: *oldc1 });
-                                if tmp1.status == CellStatus::DRAFT && tmp1.drafts.is_contain(v) {
-                                    conclusion.push(TheCellAndTheValue {
-                                        the_cell: tmp1,
-                                        the_value: vec![v],
-                                    });
-                                }
-                                let tmp2 = field.get_cell_ref_by_rc(RCCoords { r: r2, c: *oldc2 });
-                                if tmp2.status == CellStatus::DRAFT && tmp2.drafts.is_contain(v) {
-                                    conclusion.push(TheCellAndTheValue {
-                                        the_cell: tmp2,
-                                        the_value: vec![v],
-                                    });
-                                }
-                            }
-                        }
-                        // println!("v:{:?}, r:{:?}, {:?}", v, r, conclusion);
-                        if conclusion.len() != 0 {
-                           return Some(InferenceResult {
-                                inference: self,
+            }
+            conclusion
+        }
+        // 返回值是某个遍历维度下，所有满足该行/列中只有两个value的坐标
+        fn self_analyze_with_direction<'a>(
+            inference: &'a dyn Inference,
+            field: &'a Field,
+            v: CellValue,
+            direction: &'a IterDirection,
+        ) -> Option<InferenceResult<'a>> {
+            let mut only_two_cells_with_v = Vec::new();
+            for one_index in 0..9 {
+                let mut cell_with_v: Vec<(usize, usize)> = Vec::new();
+                for other_index in 0..9 {
+                    let p = field.get_cell_ref_by_rc(get_rc_coord_with_direction(
+                        one_index,
+                        other_index,
+                        &direction,
+                    ));
+                    if p.status == CellStatus::DRAFT && p.drafts.is_contain(v) {
+                        cell_with_v.push(match &direction {
+                            IterDirection::Row => (p.rc.r, p.rc.c),
+                            IterDirection::Column => (p.rc.c, p.rc.r),
+                        });
+                    }
+                }
+                if cell_with_v.len() == 2 {
+                    let (new_other_index_1, new_other_index_2) =
+                        (cell_with_v[0].1, cell_with_v[1].1);
+                    if let Some((old_one_index, _, _)) = only_two_cells_with_v.iter().find(
+                        |(_, old_other_index_1, old_other_index_2)| {
+                            new_other_index_1 == *old_other_index_1
+                                && new_other_index_2 == *old_other_index_2
+                        },
+                    ) {
+                        let condition = create_condition(
+                            field,
+                            [
+                                (one_index, new_other_index_1),
+                                (one_index, new_other_index_2),
+                                (*old_one_index, new_other_index_1),
+                                (*old_one_index, new_other_index_2),
+                            ],
+                            v,
+                            direction,
+                        );
+                        let conclusion = create_conclusion(
+                            field,
+                            (one_index, new_other_index_1),
+                            (*old_one_index, new_other_index_2),
+                            v,
+                            &direction,
+                        );
+                        if !conclusion.is_empty() {
+                            return Some(InferenceResult {
+                                inference,
                                 condition,
                                 conclusion_set_value: None,
                                 conclusion_remove_drafts: Some(conclusion),
                             });
                         }
                     } else {
-                        // println!("v:{:?}, r:{:?}, {:?}", v, r, cell_with_v_in_a_row);
-                        only_two_cell_with_v_in_a_row.push((
-                            r,
-                            cell_with_v_in_a_row[0].rc.c,
-                            cell_with_v_in_a_row[1].rc.c,
+                        only_two_cells_with_v.push((
+                            one_index,
+                            new_other_index_1,
+                            new_other_index_2,
                         ));
                     }
                 }
             }
             None
+        }
+
+        CellValue::iter().find_map(|v| {
+            self_analyze_with_direction(self, &field, v, &IterDirection::Row).or(
+                self_analyze_with_direction(self, &field, v, &IterDirection::Column),
+            )
         })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        todo!()
+        if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
+            let condition_cells: Vec<String> = inference_result
+                .condition
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            let conclusion_cells: Vec<String> = conclusion_remove_drafts
+                .iter()
+                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .collect();
+
+            return format!(
+                "{} 在 R{:?} R{:?} C{:?} C{:?} 内形成了X-Wings，因此 {} 不能填写 {:?} ",
+                condition_cells.join(" "),
+                inference_result.condition[0].the_cell.rc.r + 1,
+                inference_result.condition[2].the_cell.rc.r + 1,
+                inference_result.condition[0].the_cell.rc.c + 1,
+                inference_result.condition[1].the_cell.rc.c + 1,
+                conclusion_cells.join(" "),
+                inference_result.condition[0].the_value[0]
+            );
+        }
+
+        String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
     }
 }

@@ -18,7 +18,7 @@ mod tests {
             let result = ifs.analyze(&field);
             match result {
                 Some(result) => {
-                    // println!("{:?}", inference);
+                    println!("{:?}", result);
                     let newfield = InferenceSet::apply(&field, result);
                     if let Some(conflict) = newfield.find_conflict() {
                         field.print();
