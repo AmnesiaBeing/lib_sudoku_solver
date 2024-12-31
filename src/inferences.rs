@@ -40,7 +40,7 @@ impl InferenceSet {
                 Box::new(RowExplicitHiddenPairExclusionInference),
                 Box::new(ColExplicitHiddenPairExclusionInference),
                 Box::new(GridExplicitHiddenPairExclusionInference),
-                Box::new(XWingsInference),
+                Box::new(NStepFishInference),
             ],
         }
     }
@@ -1249,54 +1249,80 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
     }
 }
 
-/// X-Wing，2行/列的某个值，只有2个相同的列/行可以填，可以移除这2列/行中的其他行的这个值（这里按行/列两个方向同时迭代）
-struct XWingsInference;
-impl Inference for XWingsInference {
+/// n阶Fish，在一个维度（行/列）中，某个数字只出现在n个单元格中，且正好有n-1个维度的单元格正好位于相同的另一个列中（允许残缺，不允许多）
+struct NStepFishInference;
+impl Inference for NStepFishInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         // 构造返回条件
         fn create_condition<'a>(
             field: &'a Field,
-            coords: [(usize, usize); 4],
             v: CellValue,
             direction: &'a IterDirection,
+            one_indexes: &[usize],   // 阶数个usize的数组
+            other_indexes: &[usize], // 阶数个usize的数组
         ) -> Vec<TheCellAndTheValue<'a>> {
-            coords
-                .iter()
-                .map(|&(coord1, coord2)| {
-                    create_simple_cell_and_value(
+            let mut condition = Vec::new();
+
+            // 确保coords1和coords2的长度等于阶数
+            let n = one_indexes.len();
+            assert!(n == other_indexes.len());
+
+            // 生成所有可能的coords1和coords2的组合
+            for i in 0..n {
+                for j in 0..n {
+                    let coord1 = (one_indexes[i], other_indexes[j]);
+                    condition.push(create_simple_cell_and_value(
                         field,
-                        get_rc_coord_with_direction(coord1, coord2, direction),
+                        get_rc_coord_with_direction(coord1.0, coord1.1, direction),
                         v,
-                    )
-                })
-                .collect()
+                    ));
+                }
+            }
+
+            condition
         }
 
         // 构造返回结论
         fn create_conclusion<'a>(
             field: &'a Field,
-            (one_index_1, other_index_1): (usize, usize),
-            (one_index_2, other_index_2): (usize, usize),
             v: CellValue,
             direction: &'a IterDirection,
+            one_indexes: &[usize],   // 阶数个usize的数组
+            other_indexes: &[usize], // 阶数个usize的数组
         ) -> Vec<TheCellAndTheValue<'a>> {
             let mut conclusion = Vec::new();
+
+            // 确保one_indexes和other_indexes的长度等于阶数
+            let n = one_indexes.len();
+            assert!(n == other_indexes.len());
+
+            // 检查每个one_index中的每个other_index对应的单元格
             for one_index in 0..9 {
-                if one_index != one_index_1 && one_index != one_index_2 {
-                    let rc1 = get_rc_coord_with_direction(one_index, other_index_1, direction);
-                    let rc2 = get_rc_coord_with_direction(one_index, other_index_2, direction);
-                    let cell1 = field.get_cell_ref_by_rc(rc1);
-                    let cell2 = field.get_cell_ref_by_rc(rc2);
-                    if cell1.status == CellStatus::DRAFT && cell1.drafts.is_contain(v) {
-                        conclusion.push(create_simple_cell_and_value(field, rc1, v));
-                    }
-                    if cell2.status == CellStatus::DRAFT && cell2.drafts.is_contain(v) {
-                        conclusion.push(create_simple_cell_and_value(field, rc2, v));
+                // 确保不是同一个第一维度
+                if !one_indexes.contains(&one_index) {
+                    for &other_index in other_indexes {
+                        let rc = get_rc_coord_with_direction(one_index, other_index, direction);
+                        let cell = field.get_cell_ref_by_rc(rc);
+                        if cell.status == CellStatus::DRAFT && cell.drafts.is_contain(v) {
+                            conclusion.push(create_simple_cell_and_value(field, rc, v));
+                        }
                     }
                 }
             }
+
             conclusion
         }
+
+        // 判断是否满足数对条件：数组不为空，且待判断数组的每一个值，均在原数组中
+        fn is_n_fish_pair(v1: &Vec<(usize, usize)>, v2: &Vec<(usize, usize)>) -> bool {
+            if v2.is_empty() {
+                false
+            } else {
+                v2.iter()
+                    .all(|&(_, v2_c)| v1.iter().any(|&(_, v1_c)| v2_c == v1_c))
+            }
+        }
+
         // 返回值是某个遍历维度下，所有满足该行/列中只有两个value的坐标
         fn self_analyze_with_direction<'a>(
             inference: &'a dyn Inference,
@@ -1304,9 +1330,10 @@ impl Inference for XWingsInference {
             v: CellValue,
             direction: &'a IterDirection,
         ) -> Option<InferenceResult<'a>> {
-            let mut only_two_cells_with_v = Vec::new();
+            let mut all_v_in_field: Vec<Vec<(usize, usize)>> = Vec::new();
+            // 这里先求出草稿v的在某个维度上的分布
             for one_index in 0..9 {
-                let mut cell_with_v: Vec<(usize, usize)> = Vec::new();
+                let mut all_v_in_one_index = Vec::new();
                 for other_index in 0..9 {
                     let p = field.get_cell_ref_by_rc(get_rc_coord_with_direction(
                         one_index,
@@ -1314,38 +1341,49 @@ impl Inference for XWingsInference {
                         &direction,
                     ));
                     if p.status == CellStatus::DRAFT && p.drafts.is_contain(v) {
-                        cell_with_v.push(match &direction {
+                        all_v_in_one_index.push(match &direction {
                             IterDirection::Row => (p.rc.r, p.rc.c),
                             IterDirection::Column => (p.rc.c, p.rc.r),
                         });
                     }
                 }
-                if cell_with_v.len() == 2 {
-                    let (new_other_index_1, new_other_index_2) =
-                        (cell_with_v[0].1, cell_with_v[1].1);
-                    if let Some((old_one_index, _, _)) = only_two_cells_with_v.iter().find(
-                        |(_, old_other_index_1, old_other_index_2)| {
-                            new_other_index_1 == *old_other_index_1
-                                && new_other_index_2 == *old_other_index_2
-                        },
-                    ) {
+                all_v_in_field.push(all_v_in_one_index);
+            }
+            for one_index in 0..9 {
+                let cur_len = all_v_in_field[one_index].len();
+                if cur_len >= 2 && cur_len <= 4 {
+                    // 这里要找cur_len-1个is_n_fish_pair为true的行出来
+                    let mut pair_one_index = vec![one_index];
+                    for one_index_2 in 0..9 {
+                        if one_index_2 != one_index
+                            && is_n_fish_pair(
+                                &all_v_in_field[one_index],
+                                &all_v_in_field[one_index_2],
+                            )
+                        {
+                            pair_one_index.push(one_index_2);
+                        }
+                    }
+                    if pair_one_index.len() == cur_len {
                         let condition = create_condition(
                             field,
-                            [
-                                (one_index, new_other_index_1),
-                                (one_index, new_other_index_2),
-                                (*old_one_index, new_other_index_1),
-                                (*old_one_index, new_other_index_2),
-                            ],
                             v,
                             direction,
+                            &pair_one_index,
+                            &all_v_in_field[one_index]
+                                .iter()
+                                .map(|(_, other_index)| *other_index)
+                                .collect::<Vec<usize>>(),
                         );
                         let conclusion = create_conclusion(
                             field,
-                            (one_index, new_other_index_1),
-                            (*old_one_index, new_other_index_2),
                             v,
-                            &direction,
+                            direction,
+                            &pair_one_index,
+                            &all_v_in_field[one_index]
+                                .iter()
+                                .map(|(_, other_index)| *other_index)
+                                .collect::<Vec<usize>>(),
                         );
                         if !conclusion.is_empty() {
                             return Some(InferenceResult {
@@ -1355,15 +1393,10 @@ impl Inference for XWingsInference {
                                 conclusion_remove_drafts: Some(conclusion),
                             });
                         }
-                    } else {
-                        only_two_cells_with_v.push((
-                            one_index,
-                            new_other_index_1,
-                            new_other_index_2,
-                        ));
                     }
                 }
             }
+
             None
         }
 
@@ -1387,13 +1420,17 @@ impl Inference for XWingsInference {
                 .map(|cv| format!("{:?}", cv.the_cell.rc))
                 .collect();
 
+            let fish_step = match condition_cells.len() {
+                3..=4 => "二",
+                5..=9 => "三",
+                10..=16 => "四",
+                _ => "未知",
+            };
+
             return format!(
-                "{} 在 R{:?} R{:?} C{:?} C{:?} 内形成了X-Wings，因此 {} 不能填写 {:?} ",
+                "{} 形成了 {:?}阶鱼 ，因此 {} 不能填写 {:?} ",
                 condition_cells.join(" "),
-                inference_result.condition[0].the_cell.rc.r + 1,
-                inference_result.condition[2].the_cell.rc.r + 1,
-                inference_result.condition[0].the_cell.rc.c + 1,
-                inference_result.condition[1].the_cell.rc.c + 1,
+                fish_step,
                 conclusion_cells.join(" "),
                 inference_result.condition[0].the_value[0]
             );

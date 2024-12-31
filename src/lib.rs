@@ -4,11 +4,7 @@ pub mod utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        inferences::InferenceSet,
-        types::Field,
-        utils::generate_combinations,
-    };
+    use crate::{inferences::InferenceSet, types::Field, utils::generate_combinations};
 
     fn sovle(field: &Field) {
         let mut field = field.clone();
@@ -161,5 +157,21 @@ mod tests {
             generate_combinations(9, size, 0, &mut paths, &mut all_combinations);
         }
         println!("{:?}", all_combinations);
+    }
+
+    fn is_n_fish_pair(v1: &Vec<(usize, usize)>, v2: &Vec<(usize, usize)>) -> bool {
+        if v2.is_empty() {
+            false
+        } else {
+            v2.iter()
+                .all(|&(_, v2_c)| v1.iter().any(|&(_, v1_c)| v2_c == v1_c))
+        }
+    }
+
+    #[test]
+    fn is_n_fish_pair_test() {
+        let v1 = vec![(0, 1), (0, 5)];
+        let v2 = vec![(7, 1), (7, 5)];
+        assert!(is_n_fish_pair(&v1, &v2) == true);
     }
 }
