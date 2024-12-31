@@ -1428,7 +1428,7 @@ impl Inference for NStepFishInference {
             };
 
             return format!(
-                "{} 形成了 {:?}阶鱼 ，因此 {} 不能填写 {:?} ",
+                "{} 形成了 {}阶鱼 ，因此 {} 不能填写 {:?} ",
                 condition_cells.join(" "),
                 fish_step,
                 conclusion_cells.join(" "),

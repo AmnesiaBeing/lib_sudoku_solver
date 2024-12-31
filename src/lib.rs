@@ -150,6 +150,16 @@ mod tests {
     }
 
     #[test]
+    fn test12() {
+        let field = Field::initial_by_string(
+            &"000000000000010000012304560000000000035000780081020350000000000057000630063807210"
+                .to_string(),
+        )
+        .unwrap();
+        sovle(&field);
+    }
+
+    #[test]
     fn generate_combinations_test() {
         let mut all_combinations = Vec::new();
         for size in 2..=4 {
