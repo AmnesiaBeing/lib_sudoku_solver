@@ -1439,3 +1439,16 @@ impl Inference for NStepFishInference {
         String::new() // 如果没有结论，返回一个空字符串，正常情况下，不应该到这里来
     }
 }
+
+/// 暴力破解法，以上所有策略都失效的情况下，使用这个方法破解数独，计算机直接强行计算
+/// 如果数独存在多解，也返回None
+struct ExploitInference;
+impl Inference for ExploitInference{
+    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+        todo!()
+    }
+
+    fn write_result(&self, inference_result: &InferenceResult) -> String {
+        todo!()
+    }
+}
