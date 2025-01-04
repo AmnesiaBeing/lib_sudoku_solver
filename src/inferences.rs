@@ -26,21 +26,22 @@ impl InferenceSet {
     pub fn new() -> Self {
         InferenceSet {
             inferences: vec![
-                Box::new(OnlyOneLeftInference),
-                Box::new(OnlyOneRightInRowInference),
-                Box::new(OnlyOneRightInColInference),
-                Box::new(OnlyOneRightInGridInference),
-                Box::new(RowUniqueDraftByGridExclusionInference),
-                Box::new(ColUniqueDraftByGridExclusionInference),
-                Box::new(GridUniqueDraftByRowExclusionInference),
-                Box::new(GridUniqueDraftByColExclusionInference),
-                Box::new(RowExplicitNakedPairExclusionInference),
-                Box::new(ColExplicitNakedPairExclusionInference),
-                Box::new(GridExplicitNakedPairExclusionInference),
-                Box::new(RowExplicitHiddenPairExclusionInference),
-                Box::new(ColExplicitHiddenPairExclusionInference),
-                Box::new(GridExplicitHiddenPairExclusionInference),
-                Box::new(NStepFishInference),
+                // Box::new(OnlyOneLeftInference),
+                // Box::new(OnlyOneRightInRowInference),
+                // Box::new(OnlyOneRightInColInference),
+                // Box::new(OnlyOneRightInGridInference),
+                // Box::new(RowUniqueDraftByGridExclusionInference),
+                // Box::new(ColUniqueDraftByGridExclusionInference),
+                // Box::new(GridUniqueDraftByRowExclusionInference),
+                // Box::new(GridUniqueDraftByColExclusionInference),
+                // Box::new(RowExplicitNakedPairExclusionInference),
+                // Box::new(ColExplicitNakedPairExclusionInference),
+                // Box::new(GridExplicitNakedPairExclusionInference),
+                // Box::new(RowExplicitHiddenPairExclusionInference),
+                // Box::new(ColExplicitHiddenPairExclusionInference),
+                // Box::new(GridExplicitHiddenPairExclusionInference),
+                // Box::new(NStepFishInference),
+                Box::new(ExploitInference)
             ],
         }
     }
@@ -1443,12 +1444,35 @@ impl Inference for NStepFishInference {
 /// 暴力破解法，以上所有策略都失效的情况下，使用这个方法破解数独，计算机直接强行计算
 /// 如果数独存在多解，也返回None
 struct ExploitInference;
-impl Inference for ExploitInference{
+impl Inference for ExploitInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        todo!()
+        let solve_field = field.sovle()?;
+
+        let mut conclusion = Vec::new();
+
+        for r in 0..9 {
+            for c in 0..9 {
+                let rc = RCCoords { r, c };
+                let p1 = solve_field.get_cell_ref_by_rc(rc);
+                let p2 = field.get_cell_ref_by_rc(rc);
+                if p1.status != p2.status {
+                    conclusion.push(TheCellAndTheValue {
+                        the_cell: p2,
+                        the_value: vec![p1.value],
+                    });
+                }
+            }
+        }
+
+        Some(InferenceResult {
+            inference: self,
+            condition: vec![],
+            conclusion_set_value: Some(conclusion),
+            conclusion_remove_drafts: None,
+        })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {
-        todo!()
+        "暴力破解法".to_string()
     }
 }

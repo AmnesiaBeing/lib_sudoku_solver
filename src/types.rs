@@ -534,6 +534,48 @@ impl Field {
         }
     }
 
+    pub fn sovle(&self) -> Option<Field> {
+        let mut field = self.clone();
+        unsafe fn self_solve_field(field: &mut Field) -> bool {
+            let mut stack = vec![]; // 用于回溯的栈
+
+            // 找到第一个草稿状态的单元格
+            for r in 0..9 {
+                for c in 0..9 {
+                    let idx = r * 9 + c;
+                    let cell: *mut Cell = core::ptr::addr_of_mut!(field.cells[idx]);
+                    if (*cell).status == CellStatus::DRAFT {
+                        for &num in &(*cell).drafts.to_vec() {
+                            (*cell).value = num;
+                            (*cell).status = CellStatus::SOLVE;
+
+                            if field.find_conflict().is_none() {
+                                stack.push((idx, num));
+                                if field.check_if_finish() || self_solve_field(field) {
+                                    return true;
+                                }
+
+                                // 回溯
+                                (*cell).status = CellStatus::DRAFT;
+                                (*cell).value = CellValue::INVAILD; // 重置值
+                                stack.pop();
+                            }
+                        }
+                        return false; // 如果没有找到有效的数字，则返回false
+                    }
+                }
+            }
+
+            true // 如果所有单元格都已解决，则返回true
+        }
+
+        if unsafe { self_solve_field(&mut field) } {
+            Some(field)
+        } else {
+            None
+        }
+    }
+
     // 以下是常见的遍历手段
 
     /// 遍历所有单元格
