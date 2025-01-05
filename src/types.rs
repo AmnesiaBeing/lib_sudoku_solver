@@ -1,5 +1,7 @@
 use std::fmt::write;
 
+use rand::Rng;
+
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
     pub r: usize,
@@ -476,6 +478,53 @@ impl Field {
         field.fill_drafts();
 
         Ok(field)
+    }
+
+    // 采用洗牌算法+随机挖空生成随机数独
+    pub fn initial_by_random() {
+        unsafe fn swap_row(field: *mut Field, r1: usize, r2: usize) {
+            (0..9)
+                .into_iter()
+                .for_each(|c| (*field).cells.swap(r1 * 9 + c, r2 * 9 + c));
+        }
+        unsafe fn swap_col(field: *mut Field, c1: usize, c2: usize) {
+            (0..9)
+                .into_iter()
+                .for_each(|r| (*field).cells.swap(r * 9 + c1, r * 9 + c2));
+        }
+
+        let mut field = Field::initial_by_string(
+            &"123456789456789123789123456891234567234567891567891234678912345912345678345678912"
+                .to_string(),
+        )
+        .unwrap();
+
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..2000 {
+            let a = rng.gen_range(0..3);
+            let b = rng.gen_range(0..3);
+            let c = rng.gen_range(0..3);
+
+            match rng.gen_bool(0.5) {
+                true => unsafe { swap_row(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b) },
+                false => unsafe { swap_col(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b) },
+            }
+        }
+
+        let field_clone = field.clone();
+
+        for _ in 0..(81 - 17) {
+            unsafe {
+                let idx = rng.gen_range(0..81);
+                field.cells[idx].status = CellStatus::DRAFT;
+                field.cells[idx].value = CellValue::INVAILD;
+            }
+        }
+
+        field.fill_drafts();
+
+        field.print();
     }
 
     // 打印数独，用特殊效果显示草稿、固定值、填写值

@@ -1448,6 +1448,8 @@ impl Inference for ExploitInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         let solve_field = field.sovle()?;
 
+        solve_field.print();
+
         let mut conclusion = Vec::new();
 
         for r in 0..9 {

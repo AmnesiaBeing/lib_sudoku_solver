@@ -186,76 +186,8 @@ mod tests {
         assert!(is_n_fish_pair(&v1, &v2) == true);
     }
 
-    // 以下是用于测试生成数独的函数们
-
-    // const SIZE: usize = 9;
-
-    // fn is_valid(board: &[Vec<usize>; SIZE], num: usize, row: usize, col: usize) -> bool {
-    //     for i in 0..SIZE {
-    //         // 检查行
-    //         if board[row][i] == num {
-    //             return false;
-    //         }
-    //         // 检查列
-    //         if board[i][col] == num {
-    //             return false;
-    //         }
-    //         // 检查3x3宫格
-    //         if board[3 * (row / 3) + i / 3][3 * (col / 3) + i % 3] == num {
-    //             return false;
-    //         }
-    //     }
-    //     true
-    // }
-
-    // fn solve(board: &mut [Vec<usize>; SIZE]) -> bool {
-    //     let mut flat_board = vec![];
-    //     for row in 0..SIZE {
-    //         for col in 0..SIZE {
-    //             let idx = row * SIZE + col;
-    //             if board[row][col] == 0 {
-    //                 for &num in 1..=SIZE {
-    //                     if is_valid(board, num, row, col) {
-    //                         board[row][col] = num;
-    //                         flat_board.push((idx, num));
-    //                         if solve(board) {
-    //                             return true;
-    //                         } else {
-    //                             board[row][col] = 0;
-    //                         }
-    //                         flat_board.pop();
-    //                     }
-    //                 }
-    //                 return false;
-    //             }
-    //         }
-    //     }
-    //     true
-    // }
-
-    // fn generate_sudoku(known_values_count: usize) -> Vec<Vec<usize>> {
-    //     let mut board = vec![vec![0; SIZE]; SIZE];
-    //     solve(&mut board);
-    //     let mut rng = rand::thread_rng();
-    //     let mut flat_board = (0..SIZE * SIZE).collect::<Vec<usize>>();
-
-    //     // 随机移除数字
-    //     while flat_board.len() > known_values_count {
-    //         let idx = rand::Rng::gen_range(&mut rng, 0..flat_board.len());
-    //         flat_board.swap_remove(idx);
-    //         let (idx, num) = flat_board[idx];
-    //         board[idx / SIZE][idx % SIZE] = 0;
-    //     }
-
-    //     board
-    // }
-
-    // #[test]
-    // fn test_generate_sudoku() {
-    //     let known_values_count = 30; // 已知数的个数
-    //     let unique_sudoku = generate_sudoku(known_values_count);
-    //     for row in unique_sudoku {
-    //         println!("{:?}", row);
-    //     }
-    // }
+    #[test]
+    fn test_initial_by_random(){
+        Field::initial_by_random();
+    }
 }
