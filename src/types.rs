@@ -406,6 +406,15 @@ impl Field {
         for r in 0..9 {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
+                let tmp_rc = self.get_cell_mut_by_rc(rc);
+                if tmp_rc.status == CellStatus::DRAFT {
+                    tmp_rc.drafts.drafts.fill_with(|| true);
+                }
+            }
+        }
+        for r in 0..9 {
+            for c in 0..9 {
+                let rc = RCCoords { r, c };
                 let tmp_rc = self.get_cell_ref_by_rc(rc);
                 if tmp_rc.status == CellStatus::FIXED || tmp_rc.status == CellStatus::SOLVE {
                     let v = self.get_cell_ref_by_rc(rc).value;
@@ -501,28 +510,34 @@ impl Field {
 
         let mut rng = rand::thread_rng();
 
-        for _ in 0..2000 {
-            let a = rng.gen_range(0..3);
-            let b = rng.gen_range(0..3);
-            let c = rng.gen_range(0..3);
+        loop {
+            for _ in 0..2000 {
+                let a = rng.gen_range(0..3);
+                let b = rng.gen_range(0..3);
+                let c = rng.gen_range(0..3);
 
-            match rng.gen_bool(0.5) {
-                true => unsafe { swap_row(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b) },
-                false => unsafe { swap_col(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b) },
+                match rng.gen_bool(0.5) {
+                    true => unsafe {
+                        swap_row(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b)
+                    },
+                    false => unsafe {
+                        swap_col(core::ptr::addr_of_mut!(field), c * 3 + a, c * 3 + b)
+                    },
+                }
             }
-        }
 
-        let field_clone = field.clone();
-
-        for _ in 0..(81 - 17) {
-            unsafe {
+            for _ in 0..(81 - 25) {
                 let idx = rng.gen_range(0..81);
                 field.cells[idx].status = CellStatus::DRAFT;
                 field.cells[idx].value = CellValue::INVAILD;
             }
-        }
 
-        field.fill_drafts();
+            field.fill_drafts();
+
+            if field.sovle().len() == 1 {
+                break;
+            }
+        }
 
         field.print();
     }
@@ -617,6 +632,9 @@ impl Field {
 
                                 if self_solve_field(field, solutions) {
                                     solutions.push(field.clone());
+                                    if solutions.len() >= 2 {
+                                        return true;
+                                    }
                                 }
 
                                 // 回溯

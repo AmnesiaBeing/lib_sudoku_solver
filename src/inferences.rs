@@ -26,21 +26,21 @@ impl InferenceSet {
     pub fn new() -> Self {
         InferenceSet {
             inferences: vec![
-                // Box::new(OnlyOneLeftInference),
-                // Box::new(OnlyOneRightInRowInference),
-                // Box::new(OnlyOneRightInColInference),
-                // Box::new(OnlyOneRightInGridInference),
-                // Box::new(RowUniqueDraftByGridExclusionInference),
-                // Box::new(ColUniqueDraftByGridExclusionInference),
-                // Box::new(GridUniqueDraftByRowExclusionInference),
-                // Box::new(GridUniqueDraftByColExclusionInference),
-                // Box::new(RowExplicitNakedPairExclusionInference),
-                // Box::new(ColExplicitNakedPairExclusionInference),
-                // Box::new(GridExplicitNakedPairExclusionInference),
-                // Box::new(RowExplicitHiddenPairExclusionInference),
-                // Box::new(ColExplicitHiddenPairExclusionInference),
-                // Box::new(GridExplicitHiddenPairExclusionInference),
-                // Box::new(NStepFishInference),
+                Box::new(OnlyOneLeftInference),
+                Box::new(OnlyOneRightInRowInference),
+                Box::new(OnlyOneRightInColInference),
+                Box::new(OnlyOneRightInGridInference),
+                Box::new(RowUniqueDraftByGridExclusionInference),
+                Box::new(ColUniqueDraftByGridExclusionInference),
+                Box::new(GridUniqueDraftByRowExclusionInference),
+                Box::new(GridUniqueDraftByColExclusionInference),
+                Box::new(RowExplicitNakedPairExclusionInference),
+                Box::new(ColExplicitNakedPairExclusionInference),
+                Box::new(GridExplicitNakedPairExclusionInference),
+                Box::new(RowExplicitHiddenPairExclusionInference),
+                Box::new(ColExplicitHiddenPairExclusionInference),
+                Box::new(GridExplicitHiddenPairExclusionInference),
+                Box::new(NStepFishInference),
                 Box::new(ExploitInference),
             ],
         }
@@ -1476,7 +1476,8 @@ impl Inference for ExploitInference {
                     conclusion_remove_drafts: None,
                 })
             } else {
-                todo!()
+                // 多解数独，返回
+                None
             }
         }
     }
