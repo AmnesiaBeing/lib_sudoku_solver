@@ -41,7 +41,7 @@ impl InferenceSet {
                 // Box::new(ColExplicitHiddenPairExclusionInference),
                 // Box::new(GridExplicitHiddenPairExclusionInference),
                 // Box::new(NStepFishInference),
-                Box::new(ExploitInference)
+                Box::new(ExploitInference),
             ],
         }
     }
@@ -1446,32 +1446,39 @@ impl Inference for NStepFishInference {
 struct ExploitInference;
 impl Inference for ExploitInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
-        let solve_field = field.sovle()?;
+        let solve_field = field.sovle();
 
-        solve_field.print();
+        if solve_field.is_empty() {
+            None
+        } else {
+            if solve_field.len() == 1 {
+                let solve_field = &solve_field[0];
+                let mut conclusion = Vec::new();
 
-        let mut conclusion = Vec::new();
-
-        for r in 0..9 {
-            for c in 0..9 {
-                let rc = RCCoords { r, c };
-                let p1 = solve_field.get_cell_ref_by_rc(rc);
-                let p2 = field.get_cell_ref_by_rc(rc);
-                if p1.status != p2.status {
-                    conclusion.push(TheCellAndTheValue {
-                        the_cell: p2,
-                        the_value: vec![p1.value],
-                    });
+                for r in 0..9 {
+                    for c in 0..9 {
+                        let rc = RCCoords { r, c };
+                        let p1 = solve_field.get_cell_ref_by_rc(rc);
+                        let p2 = field.get_cell_ref_by_rc(rc);
+                        if p1.status != p2.status {
+                            conclusion.push(TheCellAndTheValue {
+                                the_cell: p2,
+                                the_value: vec![p1.value],
+                            });
+                        }
+                    }
                 }
+
+                Some(InferenceResult {
+                    inference: self,
+                    condition: vec![],
+                    conclusion_set_value: Some(conclusion),
+                    conclusion_remove_drafts: None,
+                })
+            } else {
+                todo!()
             }
         }
-
-        Some(InferenceResult {
-            inference: self,
-            condition: vec![],
-            conclusion_set_value: Some(conclusion),
-            conclusion_remove_drafts: None,
-        })
     }
 
     fn write_result(&self, inference_result: &InferenceResult) -> String {

@@ -364,15 +364,15 @@ impl Field {
         for r in 0..9 {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
-                let tmp_rc = self.get_cell_ref_by_rc(rc);
-                if tmp_rc.status == CellStatus::FIXED || tmp_rc.status == CellStatus::SOLVE {
-                    let v = tmp_rc.value;
+                let p_cell = self.get_cell_ref_by_rc(rc);
+                if p_cell.status == CellStatus::FIXED || p_cell.status == CellStatus::SOLVE {
+                    let v = p_cell.value;
                     for r_iter in (r + 1)..9 {
                         let tmp = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
-                            ret.push((tmp_rc, tmp));
+                            ret.push((p_cell, tmp));
                         }
                     }
                     for c_iter in (c + 1)..9 {
@@ -380,16 +380,16 @@ impl Field {
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
-                            ret.push((tmp_rc, tmp));
+                            ret.push((p_cell, tmp));
                         }
                     }
-                    let gn = tmp_rc.gn;
+                    let gn = p_cell.gn;
                     for n_iter in (gn.n + 1)..9 {
                         let tmp = self.get_cell_ref_by_gn(GNCoords { g: gn.g, n: n_iter });
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
-                            ret.push((tmp_rc, tmp));
+                            ret.push((p_cell, tmp));
                         }
                     }
                 }
@@ -583,10 +583,26 @@ impl Field {
         }
     }
 
-    pub fn sovle(&self) -> Option<Field> {
+    pub fn sovle(&self) -> Vec<Field> {
         let mut field = self.clone();
-        unsafe fn self_solve_field(field: &mut Field) -> bool {
-            let mut stack = vec![]; // 用于回溯的栈
+        let mut solutions: Vec<Field> = Vec::new();
+
+        unsafe fn self_solve_field(field: &mut Field, solutions: &mut Vec<Field>) -> bool {
+            fn is_valid(r: usize, c: usize, v: CellValue, field: &Field) -> bool {
+                let g = Coords::RC(RCCoords { r, c }).to_gn_coords().g;
+                for i in 0..9 {
+                    if field.get_cell_ref_by_rc(RCCoords { r, c: i }).value == v {
+                        return false;
+                    }
+                    if field.get_cell_ref_by_rc(RCCoords { r: i, c }).value == v {
+                        return false;
+                    }
+                    if field.get_cell_ref_by_gn(GNCoords { g, n: i }).value == v {
+                        return false;
+                    }
+                }
+                true
+            }
 
             // 找到第一个草稿状态的单元格
             for r in 0..9 {
@@ -595,19 +611,17 @@ impl Field {
                     let cell: *mut Cell = core::ptr::addr_of_mut!(field.cells[idx]);
                     if (*cell).status == CellStatus::DRAFT {
                         for &num in &(*cell).drafts.to_vec() {
-                            (*cell).value = num;
-                            (*cell).status = CellStatus::SOLVE;
+                            if is_valid(r, c, num, &field) {
+                                (*cell).value = num;
+                                (*cell).status = CellStatus::SOLVE;
 
-                            if field.find_conflict().is_none() {
-                                stack.push((idx, num));
-                                if field.check_if_finish() || self_solve_field(field) {
-                                    return true;
+                                if self_solve_field(field, solutions) {
+                                    solutions.push(field.clone());
                                 }
 
                                 // 回溯
                                 (*cell).status = CellStatus::DRAFT;
                                 (*cell).value = CellValue::INVAILD; // 重置值
-                                stack.pop();
                             }
                         }
                         return false; // 如果没有找到有效的数字，则返回false
@@ -618,11 +632,11 @@ impl Field {
             true // 如果所有单元格都已解决，则返回true
         }
 
-        if unsafe { self_solve_field(&mut field) } {
-            Some(field)
-        } else {
-            None
+        unsafe {
+            self_solve_field(&mut field, &mut solutions);
         }
+
+        solutions
     }
 
     // 以下是常见的遍历手段
