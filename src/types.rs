@@ -1,6 +1,6 @@
-use std::fmt::write;
-
 use rand::Rng;
+
+use crate::utils::create_simple_cell_and_value;
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct RCCoords {
@@ -15,42 +15,69 @@ pub struct GNCoords {
 }
 
 impl RCCoords {
-    pub fn to_gn_coords(&self) -> GNCoords {
-        GNCoords {
-            g: (self.r / 3 * 3 + self.c / 3),
-            n: (self.r % 3 * 3 + self.c % 3),
-        }
-    }
-}
-
-impl GNCoords {
-    pub fn to_rc_coords(&self) -> RCCoords {
+    pub fn from_idx(idx: usize) -> RCCoords {
         RCCoords {
-            r: (self.g / 3 * 3 + self.n / 3),
-            c: (self.g % 3 * 3 + self.n % 3),
+            r: idx / 9,
+            c: idx % 9,
         }
     }
 }
 
 #[derive(Copy, Clone, PartialEq)]
 /// 兼容上述两种坐标系
-pub enum Coords {
-    RC(RCCoords),
-    GN(GNCoords),
+pub struct Coords {
+    pub r: usize,
+    pub c: usize,
+    pub g: usize,
+    pub n: usize,
 }
 
-impl Coords {
-    pub fn to_rc_coords(&self) -> RCCoords {
-        match self {
-            Coords::RC(ret) => *ret,
-            Coords::GN(gn) => gn.to_rc_coords(),
+impl From<Coords> for RCCoords {
+    fn from(coords: Coords) -> Self {
+        let Coords { r, c, g: _, n: _ } = coords;
+        RCCoords { r, c }
+    }
+}
+
+impl From<Coords> for GNCoords {
+    fn from(coords: Coords) -> Self {
+        let Coords { r: _, c: _, g, n } = coords;
+        GNCoords { g, n }
+    }
+}
+
+impl From<RCCoords> for Coords {
+    fn from(rc: RCCoords) -> Self {
+        let RCCoords { r, c } = rc;
+        let GNCoords { g, n } = rc.into();
+        Coords { r, c, g, n }
+    }
+}
+
+impl From<GNCoords> for Coords {
+    fn from(gn: GNCoords) -> Self {
+        let RCCoords { r, c } = gn.into();
+        let GNCoords { g, n } = gn;
+        Coords { r, c, g, n }
+    }
+}
+
+impl From<GNCoords> for RCCoords {
+    fn from(gn: GNCoords) -> Self {
+        let GNCoords { g, n } = gn;
+        RCCoords {
+            r: (g / 3 * 3 + n / 3),
+            c: (g % 3 * 3 + n % 3),
         }
     }
+}
 
-    pub fn to_gn_coords(&self) -> GNCoords {
-        match self {
-            Coords::RC(rc) => rc.to_gn_coords(),
-            Coords::GN(ret) => *ret,
+impl From<RCCoords> for GNCoords {
+    fn from(rc: RCCoords) -> Self {
+        let RCCoords { r, c } = rc;
+        GNCoords {
+            g: (r / 3 * 3 + c / 3),
+            n: (r % 3 * 3 + c % 3),
         }
     }
 }
@@ -61,6 +88,14 @@ pub struct Drafts {
 }
 
 impl Drafts {
+    pub fn new_all_false() -> Drafts {
+        Drafts { drafts: [false; 9] }
+    }
+
+    pub fn new_all_true() -> Drafts {
+        Drafts { drafts: [true; 9] }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.drafts.contains(&true)
     }
@@ -101,27 +136,29 @@ impl Drafts {
     }
 
     pub fn to_vec(&self) -> Vec<CellValue> {
-        let mut ret = vec![];
-        for i in 0..9 {
-            if self.drafts[i] {
-                ret.push(CellValue::from_value((i + 1) as u32).unwrap());
-            }
-        }
-        ret
+        self.drafts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &draft)| {
+                if draft {
+                    Some(CellValue::from_value((i + 1) as u32).unwrap())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn delta_to(&self, other: Drafts) -> usize {
-        let mut ret = 0;
-        (0..9).for_each(|i| {
-            if self.drafts[i] != other.drafts[i] {
-                ret += 1;
-            }
-        });
-        ret
+        self.drafts
+            .iter()
+            .zip(other.drafts.iter())
+            .filter(|(a, b)| a != b)
+            .count()
     }
 
     pub fn len(&self) -> usize {
-        self.delta_to(Drafts::default())
+        self.drafts.iter().filter(|&&draft| draft).count()
     }
 
     pub fn union(&self, other: Drafts) -> Drafts {
@@ -231,6 +268,7 @@ impl CellValue {
 pub struct Cell {
     pub rc: RCCoords,
     pub gn: GNCoords,
+    pub coords: Coords,
     pub status: CellStatus,
     pub drafts: Drafts,
     pub value: CellValue,
@@ -259,19 +297,6 @@ impl std::fmt::Debug for GNCoords {
     }
 }
 
-impl std::fmt::Debug for Coords {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Coords::RC(RCCoords { r, c }) => {
-                write!(f, "R{}C{}", r + 1, c + 1)
-            }
-            Coords::GN(GNCoords { g, n }) => {
-                write!(f, "G{}N{}", g + 1, n + 1)
-            }
-        }
-    }
-}
-
 impl std::fmt::Debug for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}{:?}", self.rc, self.gn,)?;
@@ -281,20 +306,6 @@ impl std::fmt::Debug for Cell {
                 write!(f, "D{:?};", self.drafts)
             }
         }
-    }
-}
-
-/// 某某策略的结论通常可以归纳为：因为【某个地方的某个值】，导致【某个地方的某个值】，需要做一些什么
-/// 这里定义的是【某个地方的某个值】
-#[derive(Clone)]
-pub struct TheCellAndTheValue<'a> {
-    pub the_cell: &'a Cell,
-    pub the_value: Vec<CellValue>,
-}
-
-impl std::fmt::Debug for TheCellAndTheValue<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}V{:?}", self.the_cell.rc, self.the_value)
     }
 }
 
@@ -314,48 +325,23 @@ impl Field {
     }
 
     pub fn get_cell_mut_by_gn(&mut self, gn: GNCoords) -> &mut Cell {
-        &mut self.cells[(gn.g / 3 * 3 + gn.n / 3) * 9 + (gn.g % 3 * 3 + gn.n % 3)]
+        let RCCoords { r, c } = gn.into();
+        &mut self.cells[r * 9 + c]
     }
 
     pub fn get_cell_ref_by_gn(&self, gn: GNCoords) -> &Cell {
-        &self.cells[(gn.g / 3 * 3 + gn.n / 3) * 9 + (gn.g % 3 * 3 + gn.n % 3)]
+        let RCCoords { r, c } = gn.into();
+        &self.cells[r * 9 + c]
     }
 
     pub fn get_cell_mut_by_coords(&mut self, coords: Coords) -> &mut Cell {
-        match coords {
-            Coords::RC(rc) => self.get_cell_mut_by_rc(rc),
-            Coords::GN(gn) => self.get_cell_mut_by_gn(gn),
-        }
+        let Coords { r, c, g: _, n: _ } = coords;
+        &mut self.cells[r * 9 + c]
     }
 
     pub fn get_cell_ref_by_coords(&self, coords: Coords) -> &Cell {
-        match coords {
-            Coords::RC(rc) => self.get_cell_ref_by_rc(rc),
-            Coords::GN(gn) => self.get_cell_ref_by_gn(gn),
-        }
-    }
-
-    pub fn set_cell_value(&mut self, ref input: Cell) {
-        let p = &mut (self.cells[input.rc.r * 9 + input.rc.c]);
-        p.status = input.status;
-        p.value = input.value;
-        p.drafts = input.drafts;
-    }
-
-    // 如果一个格子中没有任何候选数，说明中间过程出错了
-    pub fn find_empty_drafts(&self) -> Option<Vec<&Cell>> {
-        let mut ret: Vec<&Cell> = vec![];
-        for p in &self.cells {
-            if p.status == CellStatus::DRAFT {
-                if !p.drafts.is_empty() {
-                    ret.push(p);
-                }
-            }
-        }
-        if ret.len() > 0 {
-            return Some(ret);
-        }
-        None
+        let Coords { r, c, g: _, n: _ } = coords;
+        &self.cells[r * 9 + c]
     }
 
     // 如果格子的内容有冲突，也说明有错误，可以不继续推理下去了
@@ -367,8 +353,10 @@ impl Field {
                 let p_cell = self.get_cell_ref_by_rc(rc);
                 if p_cell.status == CellStatus::FIXED || p_cell.status == CellStatus::SOLVE {
                     let v = p_cell.value;
+                    let g = p_cell.gn.g;
+                    let n = p_cell.gn.n;
                     for r_iter in (r + 1)..9 {
-                        let tmp = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c: c });
+                        let tmp = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c });
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
@@ -376,16 +364,15 @@ impl Field {
                         }
                     }
                     for c_iter in (c + 1)..9 {
-                        let tmp = self.get_cell_ref_by_rc(RCCoords { r: r, c: c_iter });
+                        let tmp = self.get_cell_ref_by_rc(RCCoords { r, c: c_iter });
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
                             ret.push((p_cell, tmp));
                         }
                     }
-                    let gn = p_cell.gn;
-                    for n_iter in (gn.n + 1)..9 {
-                        let tmp = self.get_cell_ref_by_gn(GNCoords { g: gn.g, n: n_iter });
+                    for n_iter in (n + 1)..9 {
+                        let tmp = self.get_cell_ref_by_gn(GNCoords { g, n: n_iter });
                         if (tmp.value == v)
                             && (tmp.status == CellStatus::FIXED || tmp.status == CellStatus::SOLVE)
                         {
@@ -395,10 +382,11 @@ impl Field {
                 }
             }
         }
-        if ret.len() > 0 {
-            return Some(ret);
+        if !ret.is_empty() {
+            Some(ret)
+        } else {
+            None
         }
-        None
     }
 
     // 仅在初始化时使用，补充所有可能的草稿数
@@ -406,32 +394,25 @@ impl Field {
         for r in 0..9 {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
-                let tmp_rc = self.get_cell_mut_by_rc(rc);
-                if tmp_rc.status == CellStatus::DRAFT {
-                    tmp_rc.drafts.drafts.fill_with(|| true);
-                }
-            }
-        }
-        for r in 0..9 {
-            for c in 0..9 {
-                let rc = RCCoords { r, c };
-                let tmp_rc = self.get_cell_ref_by_rc(rc);
-                if tmp_rc.status == CellStatus::FIXED || tmp_rc.status == CellStatus::SOLVE {
-                    let v = self.get_cell_ref_by_rc(rc).value;
-                    for r_iter in 0..9 {
-                        self.get_cell_mut_by_rc(RCCoords { r: r_iter, c })
-                            .drafts
-                            .remove_draft(v);
-                    }
-                    for c_iter in 0..9 {
-                        self.get_cell_mut_by_rc(RCCoords { r, c: c_iter })
-                            .drafts
-                            .remove_draft(v);
-                    }
-                    let gn = rc.to_gn_coords();
-                    for n_iter in 0..9 {
-                        let tmp_rc = GNCoords { g: gn.g, n: n_iter }.to_rc_coords();
-                        self.get_cell_mut_by_rc(tmp_rc).drafts.remove_draft(v)
+                let &Cell {
+                    status,
+                    coords: _,
+                    value,
+                    rc: _,
+                    gn,
+                    drafts: _,
+                } = self.get_cell_ref_by_rc(rc);
+                if status == CellStatus::FIXED {
+                    for i in 0..9 {
+                        let p_cell = self.get_cell_mut_by_rc(RCCoords { r: i, c });
+                        p_cell.drafts.remove_draft(value);
+
+                        let p_cell = self.get_cell_mut_by_rc(RCCoords { r, c: i });
+                        p_cell.drafts.remove_draft(value);
+
+                        let g = gn.g;
+                        let p_cell = self.get_cell_mut_by_gn(GNCoords { g, n: i });
+                        p_cell.drafts.remove_draft(value);
                     }
                 }
             }
@@ -451,34 +432,30 @@ impl Field {
 
             for (index, item) in input.chars().enumerate() {
                 let tmp = item.to_digit(10).expect("Invalid Character.");
-                let rc = RCCoords {
-                    r: index / 9,
-                    c: index % 9,
-                };
-                let gn = rc.to_gn_coords();
-                if tmp == 0 {
-                    std::ptr::write(
-                        p_cell.offset(index as isize),
-                        Cell {
-                            rc: rc,
-                            gn: gn,
-                            status: CellStatus::DRAFT,
-                            drafts: Drafts { drafts: [true; 9] },
-                            value: CellValue::INVAILD,
-                        },
-                    );
+                let rc = RCCoords::from_idx(index);
+                let gn = rc.into();
+                let coords = rc.into();
+                let status = if tmp == 0 {
+                    CellStatus::DRAFT
                 } else {
-                    std::ptr::write(
-                        p_cell.offset(index as isize),
-                        Cell {
-                            rc: rc,
-                            gn: gn,
-                            status: CellStatus::FIXED,
-                            drafts: Drafts { drafts: [true; 9] },
-                            value: CellValue::from_value(tmp)?,
-                        },
-                    );
-                }
+                    CellStatus::FIXED
+                };
+                let value = if tmp == 0 {
+                    CellValue::INVAILD
+                } else {
+                    CellValue::from_value(tmp).expect("Invalid Value.")
+                };
+                std::ptr::write(
+                    p_cell.offset(index as isize),
+                    Cell {
+                        rc,
+                        gn,
+                        coords,
+                        status,
+                        drafts: Drafts::new_all_true(),
+                        value,
+                    },
+                );
             }
 
             field.assume_init()
@@ -547,53 +524,40 @@ impl Field {
         println!("╔═══╤═══╤═══╦═══╤═══╤═══╦═══╤═══╤═══╗");
         for r in 0..9 {
             for m in 0..3 {
-                let mut line: String = "║".to_string();
+                let mut line = String::from("║");
                 for c in 0..9 {
                     let p = &self.cells[r * 9 + c];
-                    if p.status == CellStatus::DRAFT {
-                        for n in 0..3 {
-                            let d = m * 3 + n;
-                            if p.drafts.drafts[d] {
-                                line += &((d + 1).to_string());
-                            } else {
-                                line += " ";
-                            }
-                        }
-                    } else if p.status == CellStatus::FIXED {
-                        if m == 0 {
-                            line += "\\ /";
-                        } else if m == 1 {
-                            line += " ";
-                            line += &((p.value as u32).to_string());
-                            line += " ";
-                        } else {
-                            line += "/ \\";
-                        }
-                    } else if p.status == CellStatus::SOLVE {
-                        if m == 0 {
-                            line += "***";
-                        } else if m == 1 {
-                            line += "*";
-                            line += &((p.value as u32).to_string());
-                            line += "*";
-                        } else {
-                            line += "***";
-                        }
-                    }
-                    if c % 3 == 2 {
-                        line += "║";
-                    } else {
-                        line += "│";
-                    }
+                    line += &match p.status {
+                        CellStatus::DRAFT => (0..3)
+                            .map(|n| {
+                                if p.drafts.drafts[m * 3 + n] {
+                                    (m * 3 + n + 1).to_string()
+                                } else {
+                                    " ".to_string()
+                                }
+                            })
+                            .collect::<String>(),
+                        CellStatus::FIXED => match m {
+                            0 => "\\ /".to_string(),
+                            1 => format!(" {} ", p.value as u32),
+                            _ => "/ \\".to_string(),
+                        },
+                        CellStatus::SOLVE => match m {
+                            0 => "***".to_string(),
+                            1 => format!("*{}*", p.value as u32),
+                            _ => "***".to_string(),
+                        },
+                    };
+                    line += if c % 3 == 2 { "║" } else { "│" };
                 }
                 println!("{}", line);
             }
             if r == 8 {
-                println!("╚═══╧═══╧═══╩═══╧═══╧═══╩═══╧═══╧═══╝")
+                println!("╚═══╧═══╧═══╩═══╧═══╧═══╩═══╧═══╧═══╝");
             } else if r % 3 == 2 {
-                println!("╠═══╪═══╪═══╬═══╪═══╪═══╬═══╪═══╪═══╣")
+                println!("╠═══╪═══╪═══╬═══╪═══╪═══╬═══╪═══╪═══╣");
             } else {
-                println!("╟───┼───┼───╫───┼───┼───╫───┼───┼───╢")
+                println!("╟───┼───┼───╫───┼───┼───╫───┼───┼───╢");
             }
         }
     }
@@ -604,7 +568,7 @@ impl Field {
 
         unsafe fn self_solve_field(field: &mut Field, solutions: &mut Vec<Field>) -> bool {
             fn is_valid(r: usize, c: usize, v: CellValue, field: &Field) -> bool {
-                let g = Coords::RC(RCCoords { r, c }).to_gn_coords().g;
+                let GNCoords { g, n: _ } = RCCoords { r, c }.into();
                 for i in 0..9 {
                     if field.get_cell_ref_by_rc(RCCoords { r, c: i }).value == v {
                         return false;
@@ -757,66 +721,45 @@ impl Field {
             .into_iter()
     }
 
-    /// 给定一个坐标，根据坐标遍历同一行、同一列、同一宫所有可辐射的单元格（若自身为可操作单元格，则包括自身）
-    pub fn collect_all_drafts_cells_by_coords(&self, coords: Coords) -> Vec<&Cell> {
-        let RCCoords { r, c } = coords.to_rc_coords();
-        let GNCoords { g, n: _ } = coords.to_gn_coords();
-
-        // 先搜集行
-        (0..9)
-            .into_iter()
-            .map(|c_iter| self.get_cell_ref_by_rc(RCCoords { r, c: c_iter }))
-            .filter(|&p| (*p).status == CellStatus::DRAFT)
-            .chain(
-                // 再收集列，注意去重
-                (0..9)
-                    .into_iter()
-                    .map(|r_iter| self.get_cell_ref_by_rc(RCCoords { r: r_iter, c }))
-                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).rc.r != r),
-            )
-            .chain(
-                (0..9)
-                    .into_iter()
-                    .map(|n_iter| self.get_cell_ref_by_gn(GNCoords { g, n: n_iter }))
-                    .filter(|&p| {
-                        (*p).status == CellStatus::DRAFT && (*p).rc.r != r && (*p).rc.c != c
-                    }),
-            )
-            .collect()
-    }
-
-    // 当某个格子设置某个值的时候，将同行列宫的该值的草稿值移除，输入值在vec_set_value.cells内，且value唯一
-    pub fn collect_all_drafts_coords_by_the_coords_and_the_value(
+    /// 给定一个坐标和值，根据坐标遍历同一行、同一列、同一宫所有含有这个值的单元格
+    pub fn collect_all_drafts_coords_by_coords_and_value(
         &self,
-        middle_cell: &Cell,
+        coords: Coords,
         value: CellValue,
-    ) -> Option<Vec<TheCellAndTheValue>> {
-        // let RCCoords { r, c } = middle_cell.rc;
+    ) -> Vec<Coords> {
+        let Coords { r, c, g, n: _ } = coords;
 
-        let ret: Vec<TheCellAndTheValue> = self
-            .collect_all_drafts_cells_by_coords(Coords::RC(middle_cell.rc.clone()))
-            .iter()
-            .filter_map(|&p| {
-                if p.drafts.is_contain(value) {
-                    Some(TheCellAndTheValue {
-                        the_cell: *&p,
-                        the_value: vec![value],
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut coords = vec![];
 
-        if ret.len() != 0 {
-            Some(ret)
-        } else {
-            None
+        for i in 0..9 {
+            let p_cell = self.get_cell_ref_by_rc(RCCoords { r: i, c });
+            if p_cell.status == CellStatus::DRAFT && p_cell.drafts.is_contain(value) {
+                coords.push(p_cell.coords);
+            }
+
+            let p_cell = self.get_cell_ref_by_rc(RCCoords { r, c: i });
+            if p_cell.rc.c != c
+                && p_cell.status == CellStatus::DRAFT
+                && p_cell.drafts.is_contain(value)
+            {
+                coords.push(p_cell.coords);
+            }
+
+            let p_cell = self.get_cell_ref_by_gn(GNCoords { g, n: i });
+            if p_cell.rc.r != r
+                && p_cell.rc.c != c
+                && p_cell.status == CellStatus::DRAFT
+                && p_cell.drafts.is_contain(value)
+            {
+                coords.push(p_cell.coords);
+            }
         }
+
+        coords
     }
 
     /// 检查是否都填写完毕了
     pub fn check_if_finish(&self) -> bool {
-        self.collect_all_drafts_cells().len() == 0
+        self.collect_all_drafts_cells().is_empty()
     }
 }

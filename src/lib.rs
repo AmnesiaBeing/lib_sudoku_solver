@@ -11,28 +11,29 @@ mod tests {
         field.print();
         let ifs = InferenceSet::new();
         loop {
-            let result = ifs.analyze(&field);
+            let old_field = field.clone();
+            let result = ifs.analyze(&old_field);
             match result {
                 Some(result) => {
                     println!("{:?}", result);
-                    let newfield = InferenceSet::apply(&field, result);
-                    if let Some(conflict) = newfield.find_conflict() {
-                        field.print();
-                        newfield.print();
+                    InferenceSet::apply(&mut field, result);
+                    field.print();
+                    if let Some(conflict) = field.find_conflict() {
+                        // field.print();
                         println!("conflict: {:?}", conflict);
+                        // old_field.print();
                         break;
                     } else {
-                        field = newfield;
                         if field.check_if_finish() {
                             println!("推导完毕!");
-                            field.print();
+                            // field.print();
                             break;
                         }
                     }
                 }
                 None => {
                     println!("无法推导!");
-                    field.print();
+                    // field.print();
                     break;
                 }
             }
@@ -187,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_by_random(){
+    fn test_initial_by_random() {
         Field::initial_by_random();
     }
 }

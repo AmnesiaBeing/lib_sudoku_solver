@@ -1,16 +1,30 @@
 use crate::{
-    types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, RCCoords, TheCellAndTheValue},
+    types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, GNCoords, RCCoords},
     utils::{
-        create_simple_cell_and_value, get_rc_coord_with_direction, get_rc_index_with_direction,
-        IterDirection,
+        create_simple_cell_and_value, get_coords_with_direction, get_rc_coord_with_direction,
+        make_simple_conclusion_when_set_value, IterDirection,
     },
 };
 
+/// 某某策略的结论通常可以归纳为：因为【某个地方的某个值】，导致【某个地方的某个值】，需要做一些什么
+/// 这里定义的是【某个地方的某个值】
+#[derive(Clone)]
+pub struct TheCoordsAndTheValue {
+    pub the_coords: Coords,
+    pub the_value: Vec<CellValue>,
+}
+
+// impl std::fmt::Debug for TheCoordsAndTheValue {
+//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         write!(f, "{:?}V{:?}", self.the_coords.rc, self.the_value)
+//     }
+// }
+
 pub struct InferenceResult<'a> {
     inference: &'a dyn Inference,
-    condition: Vec<TheCellAndTheValue<'a>>,
-    conclusion_set_value: Option<Vec<TheCellAndTheValue<'a>>>,
-    conclusion_remove_drafts: Option<Vec<TheCellAndTheValue<'a>>>,
+    condition: Vec<TheCoordsAndTheValue>,
+    conclusion_set_value: Option<Vec<TheCoordsAndTheValue>>,
+    conclusion_remove_drafts: Option<Vec<TheCoordsAndTheValue>>,
 }
 
 trait Inference {
@@ -50,11 +64,10 @@ impl InferenceSet {
         self.inferences.iter().find_map(|inf| inf.analyze(field))
     }
 
-    pub fn apply(field: &Field, result: InferenceResult) -> Field {
-        let mut ret = field.clone();
+    pub fn apply(field: &mut Field, result: InferenceResult) {
         if result.conclusion_set_value.is_some() {
             result.conclusion_set_value.unwrap().iter().for_each(|cv| {
-                let p = ret.get_cell_mut_by_coords(Coords::RC((cv.the_cell).rc));
+                let p = field.get_cell_mut_by_coords(cv.the_coords);
                 p.value = cv.the_value[0];
                 p.status = CellStatus::SOLVE;
             })
@@ -65,16 +78,15 @@ impl InferenceSet {
                 .unwrap()
                 .iter()
                 .for_each(|cv| {
-                    let p = ret.get_cell_mut_by_coords(Coords::RC((cv.the_cell).rc));
+                    let p = field.get_cell_mut_by_coords(cv.the_coords);
                     cv.the_value.iter().for_each(|&v| p.drafts.remove_draft(v));
                 })
         }
-        ret
     }
 }
 
-impl std::fmt::Debug for InferenceResult<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> std::fmt::Debug for InferenceResult<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.inference.write_result(&self))
     }
 }
@@ -86,19 +98,19 @@ impl Inference for OnlyOneLeftInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         field.collect_all_drafts_cells().iter().find_map(|&p| {
             p.drafts.try_get_the_only_one().map(|cv| {
-                let cell_and_value = TheCellAndTheValue {
-                    the_cell: p,
+                let condition = TheCoordsAndTheValue {
+                    the_coords: p.coords,
                     the_value: vec![cv],
                 };
                 InferenceResult {
                     inference: self,
-                    condition: vec![cell_and_value.clone()],
-                    conclusion_set_value: Some(vec![cell_and_value.clone()]),
-                    conclusion_remove_drafts: field
-                        .collect_all_drafts_coords_by_the_coords_and_the_value(
-                            cell_and_value.the_cell,
-                            cell_and_value.the_value[0],
-                        ),
+                    condition: vec![condition.clone()],
+                    conclusion_set_value: Some(vec![condition.clone()]),
+                    conclusion_remove_drafts: make_simple_conclusion_when_set_value(
+                        field,
+                        &condition.the_coords,
+                        condition.the_value[0],
+                    ),
                 }
             })
         })
@@ -108,9 +120,9 @@ impl Inference for OnlyOneLeftInference {
         let condition = &inference_result.condition[0];
         let mut r = format!(
             "{:?} 的可能 {:?} 在格内唯一，因此 {:?} 只能填写 {:?} ",
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0],
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0]
         );
 
@@ -119,7 +131,7 @@ impl Inference for OnlyOneLeftInference {
                 "，并移除 {} 的可能 {:?}",
                 conclusion_remove_drafts
                     .iter()
-                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                     .collect::<Vec<String>>()
                     .join(" "),
                 condition.the_value[0]
@@ -144,16 +156,17 @@ impl Inference for OnlyOneRightInRowInference {
                             .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
-                        let cv = TheCellAndTheValue {
-                            the_cell: p,
+                        let cv = TheCoordsAndTheValue {
+                            the_coords: p.coords,
                             the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
                             condition: vec![cv.clone()],
                             conclusion_set_value: Some(vec![cv]),
-                            conclusion_remove_drafts: field
-                                .collect_all_drafts_coords_by_the_coords_and_the_value(p, ret),
+                            conclusion_remove_drafts: make_simple_conclusion_when_set_value(
+                                &field, &p.coords, ret,
+                            ),
                         })
                     })
             })
@@ -164,10 +177,10 @@ impl Inference for OnlyOneRightInRowInference {
         let condition = &inference_result.condition[0];
         let mut r = format!(
             "{:?} 的可能 {:?} 在 R{:?} 内唯一，因此 {:?} 只能填写 {:?}",
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0],
-            condition.the_cell.rc.r + 1,
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords).r + 1,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0]
         );
 
@@ -176,7 +189,7 @@ impl Inference for OnlyOneRightInRowInference {
                 "，并移除 {} 的可能 {:?}",
                 conclusion_remove_drafts
                     .iter()
-                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                     .collect::<Vec<String>>()
                     .join(" "),
                 condition.the_value[0]
@@ -201,16 +214,17 @@ impl Inference for OnlyOneRightInColInference {
                             .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
-                        let cv = TheCellAndTheValue {
-                            the_cell: p,
+                        let cv = TheCoordsAndTheValue {
+                            the_coords: p.coords,
                             the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
                             condition: vec![cv.clone()],
                             conclusion_set_value: Some(vec![cv]),
-                            conclusion_remove_drafts: field
-                                .collect_all_drafts_coords_by_the_coords_and_the_value(p, ret),
+                            conclusion_remove_drafts: make_simple_conclusion_when_set_value(
+                                &field, &p.coords, ret,
+                            ),
                         })
                     })
             })
@@ -221,10 +235,10 @@ impl Inference for OnlyOneRightInColInference {
         let condition = &inference_result.condition[0];
         let mut r = format!(
             "{:?} 的可能 {:?} 在 C{:?} 内唯一，因此 {:?} 只能填写 {:?}",
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0],
-            condition.the_cell.rc.c + 1,
-            condition.the_cell.rc,
+            Into::<RCCoords>::into(condition.the_coords).c + 1,
+            Into::<RCCoords>::into(condition.the_coords),
             condition.the_value[0]
         );
 
@@ -233,7 +247,7 @@ impl Inference for OnlyOneRightInColInference {
                 "，并移除 {} 的可能 {:?}",
                 conclusion_remove_drafts
                     .iter()
-                    .map(|cv| format!("{:?}", cv.the_cell.rc))
+                    .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                     .collect::<Vec<String>>()
                     .join(" "),
                 condition.the_value[0]
@@ -258,16 +272,17 @@ impl Inference for OnlyOneRightInGridInference {
                             .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.drafts.is_contain(*v))
                     })
                     .and_then(|&ret| {
-                        let cv = TheCellAndTheValue {
-                            the_cell: p,
+                        let cv = TheCoordsAndTheValue {
+                            the_coords: p.coords,
                             the_value: vec![ret],
                         };
                         Some(InferenceResult {
                             inference: self,
                             condition: vec![cv.clone()],
                             conclusion_set_value: Some(vec![cv]),
-                            conclusion_remove_drafts: field
-                                .collect_all_drafts_coords_by_the_coords_and_the_value(p, ret),
+                            conclusion_remove_drafts: make_simple_conclusion_when_set_value(
+                                &field, &p.coords, ret,
+                            ),
                         })
                     })
             })
@@ -278,10 +293,10 @@ impl Inference for OnlyOneRightInGridInference {
         let condition = &inference_result.condition[0];
         let mut r = format!(
             "{:?} 的可能 {:?} 在 G{:?} 内唯一，因此 {:?} 只能填写 {:?}",
-            condition.the_cell.gn,
+            Into::<GNCoords>::into(condition.the_coords),
             condition.the_value[0],
-            condition.the_cell.gn.g + 1,
-            condition.the_cell.gn,
+            Into::<GNCoords>::into(condition.the_coords).g + 1,
+            Into::<GNCoords>::into(condition.the_coords),
             condition.the_value[0]
         );
 
@@ -290,7 +305,7 @@ impl Inference for OnlyOneRightInGridInference {
                 "，并移除 {} 的可能 {:?}",
                 conclusion_remove_drafts
                     .iter()
-                    .map(|cv| format!("{:?}", cv.the_cell.gn))
+                    .map(|cv| format!("{:?}", Into::<GNCoords>::into(cv.the_coords)))
                     .collect::<Vec<String>>()
                     .join(" "),
                 condition.the_value[0]
@@ -326,16 +341,16 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
                     if !cells_in_same_row_but_not_in_same_grid.is_empty() {
                         let condition = cells_with_value
                             .iter()
-                            .map(|&p| TheCellAndTheValue {
-                                the_cell: p,
+                            .map(|&p| TheCoordsAndTheValue {
+                                the_coords: p.coords,
                                 the_value: vec![v],
                             })
                             .collect();
 
                         let conclusion = cells_in_same_row_but_not_in_same_grid
                             .iter()
-                            .map(|&p| TheCellAndTheValue {
-                                the_cell: p,
+                            .map(|&p| TheCoordsAndTheValue {
+                                the_coords: p.coords,
                                 the_value: vec![v],
                             })
                             .collect();
@@ -362,18 +377,18 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .map(|cv| format!("{:?}", Into::<GNCoords>::into(cv.the_coords)))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value[0],
-            inference_result.condition[0].the_cell.gn.g + 1,
-            inference_result.condition[0].the_cell.rc.r + 1
+            Into::<GNCoords>::into(inference_result.condition[0].the_coords).g + 1,
+            Into::<RCCoords>::into(inference_result.condition[0].the_coords).r + 1
         );
 
         if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
             r.push_str(&format!(
                 "{} 均不能填写 {:?}",
@@ -411,16 +426,16 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                     if !cells_in_same_col_but_not_in_same_grid.is_empty() {
                         let condition = cells_with_value
                             .iter()
-                            .map(|&p| TheCellAndTheValue {
-                                the_cell: p,
+                            .map(|&p| TheCoordsAndTheValue {
+                                the_coords: p.coords,
                                 the_value: vec![v],
                             })
                             .collect();
 
                         let conclusion = cells_in_same_col_but_not_in_same_grid
                             .iter()
-                            .map(|&p| TheCellAndTheValue {
-                                the_cell: p,
+                            .map(|&p| TheCoordsAndTheValue {
+                                the_coords: p.coords,
                                 the_value: vec![v],
                             })
                             .collect();
@@ -447,18 +462,18 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .map(|cv| format!("{:?}", Into::<GNCoords>::into(cv.the_coords)))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value[0],
-            inference_result.condition[0].the_cell.gn.g + 1,
-            inference_result.condition[0].the_cell.rc.c + 1
+            Into::<GNCoords>::into(inference_result.condition[0].the_coords).g + 1,
+            Into::<RCCoords>::into(inference_result.condition[0].the_coords).c + 1
         );
 
         if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
             r.push_str(&format!(
                 "{} 均不能填写 {:?}",
@@ -493,21 +508,21 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                         let condition = vr
                             .iter()
                             .filter(|&p_iter| p_iter.drafts.is_contain(v))
-                            .map(|p_iter| TheCellAndTheValue {
-                                the_cell: p_iter,
+                            .map(|p_iter| TheCoordsAndTheValue {
+                                the_coords: p_iter.coords,
                                 the_value: vec![v],
                             })
-                            .collect::<Vec<TheCellAndTheValue>>();
+                            .collect::<Vec<TheCoordsAndTheValue>>();
 
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
                             .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(v))
-                            .map(|p_iter| TheCellAndTheValue {
-                                the_cell: p_iter,
+                            .map(|p_iter| TheCoordsAndTheValue {
+                                the_coords: p_iter.coords,
                                 the_value: vec![v],
                             })
-                            .collect::<Vec<TheCellAndTheValue>>();
+                            .collect::<Vec<TheCoordsAndTheValue>>();
 
                         InferenceResult {
                             inference: self,
@@ -526,18 +541,18 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.rc.r + 1,
-            inference_result.condition[0].the_cell.gn.g + 1
+            Into::<RCCoords>::into(inference_result.condition[0].the_coords).r + 1,
+            Into::<GNCoords>::into(inference_result.condition[0].the_coords).g + 1
         );
 
         if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
             r.push_str(&format!(
                 "{}均不能填写 {:?}",
@@ -572,21 +587,21 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                         let condition = vc
                             .iter()
                             .filter(|&p_iter| p_iter.drafts.is_contain(v))
-                            .map(|p_iter| TheCellAndTheValue {
-                                the_cell: p_iter,
+                            .map(|p_iter| TheCoordsAndTheValue {
+                                the_coords: p_iter.coords,
                                 the_value: vec![v],
                             })
-                            .collect::<Vec<TheCellAndTheValue>>();
+                            .collect::<Vec<TheCoordsAndTheValue>>();
 
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
                             .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(v))
-                            .map(|p_iter| TheCellAndTheValue {
-                                the_cell: p_iter,
+                            .map(|p_iter| TheCoordsAndTheValue {
+                                the_coords: p_iter.coords,
                                 the_value: vec![v],
                             })
-                            .collect::<Vec<TheCellAndTheValue>>();
+                            .collect::<Vec<TheCoordsAndTheValue>>();
 
                         InferenceResult {
                             inference: self,
@@ -605,18 +620,18 @@ impl Inference for GridUniqueDraftByColExclusionInference {
             inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect::<Vec<String>>()
                 .join(" "),
             inference_result.condition[0].the_value,
-            inference_result.condition[0].the_cell.rc.c + 1,
-            inference_result.condition[0].the_cell.gn.g + 1
+            Into::<RCCoords>::into(inference_result.condition[0].the_coords).c + 1,
+            Into::<GNCoords>::into(inference_result.condition[0].the_coords).g + 1
         );
 
         if let Some(conclusion_remove_drafts) = &inference_result.conclusion_remove_drafts {
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
             r.push_str(&format!(
                 "{}均不能填写 {:?}",
@@ -656,14 +671,14 @@ impl Inference for RowExplicitNakedPairExclusionInference {
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
                 if union_drafts_vec.len() == combo.len() {
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vr[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vr[i].coords,
                             the_value: union_drafts_vec.clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                    let conclusion: Vec<TheCoordsAndTheValue> = rest
                         .iter()
                         .filter_map(|&i| {
                             if vr[i]
@@ -672,8 +687,8 @@ impl Inference for RowExplicitNakedPairExclusionInference {
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vr[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vr[i].coords,
                                     the_value: union_drafts_vec.clone(),
                                 })
                             } else {
@@ -700,12 +715,12 @@ impl Inference for RowExplicitNakedPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_values: Vec<String> = conclusion_remove_drafts[0]
@@ -718,8 +733,8 @@ impl Inference for RowExplicitNakedPairExclusionInference {
                 "{} 的草稿 {} 在同一 R{:?} 内形成了数对，因此该 R{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.r + 1,
-                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).r + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).r + 1,
                 removed_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -756,14 +771,14 @@ impl Inference for ColExplicitNakedPairExclusionInference {
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
                 if union_drafts_vec.len() == combo.len() {
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vc[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vc[i].coords,
                             the_value: union_drafts_vec.clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                    let conclusion: Vec<TheCoordsAndTheValue> = rest
                         .iter()
                         .filter_map(|&i| {
                             if vc[i]
@@ -772,8 +787,8 @@ impl Inference for ColExplicitNakedPairExclusionInference {
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vc[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vc[i].coords,
                                     the_value: union_drafts_vec.clone(),
                                 })
                             } else {
@@ -800,12 +815,12 @@ impl Inference for ColExplicitNakedPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_values: Vec<String> = conclusion_remove_drafts[0]
@@ -818,8 +833,8 @@ impl Inference for ColExplicitNakedPairExclusionInference {
                 "{} 的草稿 {} 在同一 C{:?} 内形成了数对，因此该 C{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
                 removed_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -856,14 +871,14 @@ impl Inference for GridExplicitNakedPairExclusionInference {
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
                 if union_drafts_vec.len() == combo.len() {
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vg[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vg[i].coords,
                             the_value: union_drafts_vec.clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = rest
+                    let conclusion: Vec<TheCoordsAndTheValue> = rest
                         .iter()
                         .filter_map(|&i| {
                             if vg[i]
@@ -872,8 +887,8 @@ impl Inference for GridExplicitNakedPairExclusionInference {
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vg[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vg[i].coords,
                                     the_value: union_drafts_vec.clone(),
                                 })
                             } else {
@@ -900,12 +915,12 @@ impl Inference for GridExplicitNakedPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .map(|cv| format!("{:?}", Into::<GNCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.gn))
+                .map(|cv| format!("{:?}", Into::<GNCoords>::into(cv.the_coords)))
                 .collect();
 
             let removed_values: Vec<String> = conclusion_remove_drafts[0]
@@ -918,8 +933,8 @@ impl Inference for GridExplicitNakedPairExclusionInference {
                 "{} 的草稿 {} 在同一 G{:?} 内形成了数对，因此该 G{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
                 removed_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.gn.g + 1,
-                conclusion_remove_drafts[0].the_cell.gn.g + 1,
+                Into::<GNCoords>::into(conclusion_remove_drafts[0].the_coords).g + 1,
+                Into::<GNCoords>::into(conclusion_remove_drafts[0].the_coords).g + 1,
                 removed_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -962,14 +977,14 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
                         .reduce(|a, b| a.union(b))
                         .unwrap_or_default();
                     let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vr[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vr[i].coords,
                             the_value: hidden_pair_drafts.to_vec().clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                    let conclusion: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .filter_map(|&i| {
                             if vr[i]
@@ -978,8 +993,8 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vr[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vr[i].coords,
                                     the_value: rest_union_drafts.to_vec().clone(),
                                 })
                             } else {
@@ -1006,7 +1021,7 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let condition_values: Vec<String> = inference_result.condition[0]
@@ -1024,9 +1039,9 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
             return format!(
                 "{} 在 R{:?} 内形成了隐性数对 {} ，因此该 R{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).r + 1,
                 condition_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.r + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).r + 1,
                 condition_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -1069,14 +1084,14 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
                         .reduce(|a, b| a.union(b))
                         .unwrap_or_default();
                     let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vc[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vc[i].coords,
                             the_value: hidden_pair_drafts.to_vec().clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                    let conclusion: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .filter_map(|&i| {
                             if vc[i]
@@ -1085,8 +1100,8 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vc[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vc[i].coords,
                                     the_value: rest_union_drafts.to_vec().clone(),
                                 })
                             } else {
@@ -1113,7 +1128,7 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let condition_values: Vec<String> = inference_result.condition[0]
@@ -1131,9 +1146,9 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
             return format!(
                 "{} 在 C{:?} 内形成了隐性数对 {} ，因此该 C{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
                 condition_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
                 condition_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -1176,14 +1191,14 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                         .reduce(|a, b| a.union(b))
                         .unwrap_or_default();
                     let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
-                    let condition: Vec<TheCellAndTheValue<'_>> = combo
+                    let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
-                        .map(|&i| TheCellAndTheValue {
-                            the_cell: &vg[i],
+                        .map(|&i| TheCoordsAndTheValue {
+                            the_coords: vg[i].coords,
                             the_value: hidden_pair_drafts.to_vec().clone(),
                         })
                         .collect();
-                    let conclusion: Vec<TheCellAndTheValue<'_>> = combo
+                    let conclusion: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .filter_map(|&i| {
                             if vg[i]
@@ -1192,8 +1207,8 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
                             {
-                                Some(TheCellAndTheValue {
-                                    the_cell: &vg[i],
+                                Some(TheCoordsAndTheValue {
+                                    the_coords: vg[i].coords,
                                     the_value: rest_union_drafts.to_vec().clone(),
                                 })
                             } else {
@@ -1220,7 +1235,7 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let condition_values: Vec<String> = inference_result.condition[0]
@@ -1238,9 +1253,9 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
             return format!(
                 "{} 在 C{:?} 内形成了隐性数对 {} ，因此该 C{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
                 condition_values.join(" "),
-                conclusion_remove_drafts[0].the_cell.rc.c + 1,
+                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
                 condition_cells.join(" "),
                 removed_values.join(" ")
             );
@@ -1255,13 +1270,12 @@ struct NStepFishInference;
 impl Inference for NStepFishInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         // 构造返回条件
-        fn create_condition<'a>(
-            field: &'a Field,
+        fn create_condition(
             v: CellValue,
-            direction: &'a IterDirection,
+            direction: &IterDirection,
             one_indexes: &[usize],   // 阶数个usize的数组
             other_indexes: &[usize], // 阶数个usize的数组
-        ) -> Vec<TheCellAndTheValue<'a>> {
+        ) -> Vec<TheCoordsAndTheValue> {
             let mut condition = Vec::new();
 
             // 确保coords1和coords2的长度等于阶数
@@ -1271,10 +1285,9 @@ impl Inference for NStepFishInference {
             // 生成所有可能的coords1和coords2的组合
             for i in 0..n {
                 for j in 0..n {
-                    let coord1 = (one_indexes[i], other_indexes[j]);
+                    let (one_index, other_index) = (one_indexes[i], other_indexes[j]);
                     condition.push(create_simple_cell_and_value(
-                        field,
-                        get_rc_coord_with_direction(coord1.0, coord1.1, direction),
+                        get_coords_with_direction(one_index, other_index, direction),
                         v,
                     ));
                 }
@@ -1290,7 +1303,7 @@ impl Inference for NStepFishInference {
             direction: &'a IterDirection,
             one_indexes: &[usize],   // 阶数个usize的数组
             other_indexes: &[usize], // 阶数个usize的数组
-        ) -> Vec<TheCellAndTheValue<'a>> {
+        ) -> Vec<TheCoordsAndTheValue> {
             let mut conclusion = Vec::new();
 
             // 确保one_indexes和other_indexes的长度等于阶数
@@ -1305,7 +1318,7 @@ impl Inference for NStepFishInference {
                         let rc = get_rc_coord_with_direction(one_index, other_index, direction);
                         let cell = field.get_cell_ref_by_rc(rc);
                         if cell.status == CellStatus::DRAFT && cell.drafts.is_contain(v) {
-                            conclusion.push(create_simple_cell_and_value(field, rc, v));
+                            conclusion.push(create_simple_cell_and_value(rc.into(), v));
                         }
                     }
                 }
@@ -1345,6 +1358,7 @@ impl Inference for NStepFishInference {
                         all_v_in_one_index.push(match &direction {
                             IterDirection::Row => (p.rc.r, p.rc.c),
                             IterDirection::Column => (p.rc.c, p.rc.r),
+                            IterDirection::Grid => todo!(),
                         });
                     }
                 }
@@ -1367,7 +1381,6 @@ impl Inference for NStepFishInference {
                     }
                     if pair_one_index.len() == cur_len {
                         let condition = create_condition(
-                            field,
                             v,
                             direction,
                             &pair_one_index,
@@ -1413,12 +1426,12 @@ impl Inference for NStepFishInference {
             let condition_cells: Vec<String> = inference_result
                 .condition
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let conclusion_cells: Vec<String> = conclusion_remove_drafts
                 .iter()
-                .map(|cv| format!("{:?}", cv.the_cell.rc))
+                .map(|cv| format!("{:?}", Into::<RCCoords>::into(cv.the_coords)))
                 .collect();
 
             let fish_step = match condition_cells.len() {
@@ -1461,8 +1474,8 @@ impl Inference for ExploitInference {
                         let p1 = solve_field.get_cell_ref_by_rc(rc);
                         let p2 = field.get_cell_ref_by_rc(rc);
                         if p1.status != p2.status {
-                            conclusion.push(TheCellAndTheValue {
-                                the_cell: p2,
+                            conclusion.push(TheCoordsAndTheValue {
+                                the_coords: p2.coords,
                                 the_value: vec![p1.value],
                             });
                         }
