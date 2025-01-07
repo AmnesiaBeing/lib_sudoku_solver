@@ -1164,17 +1164,20 @@ struct GridExplicitHiddenPairExclusionInference;
 impl Inference for GridExplicitHiddenPairExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
         for vg in field.iter_all_drafts_cells_by_gn() {
-            let mut all_combinations = Vec::new();
-            for size in 2..=4 {
-                let mut paths = Vec::new();
-                crate::utils::generate_combinations(
-                    vg.len(),
-                    size,
-                    0,
-                    &mut paths,
-                    &mut all_combinations,
-                );
-            }
+            let all_combinations = (2..=4)
+                .flat_map(|size| {
+                    let mut paths = Vec::new();
+                    let mut combinations = Vec::new();
+                    crate::utils::generate_combinations(
+                        vg.len(),
+                        size,
+                        0,
+                        &mut paths,
+                        &mut combinations,
+                    );
+                    combinations
+                })
+                .collect::<Vec<_>>();
 
             for (combo, rest) in all_combinations {
                 let rest_union_drafts: Drafts = rest
@@ -1195,7 +1198,7 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                         .iter()
                         .map(|&i| TheCoordsAndTheValue {
                             the_coords: vg[i].coords,
-                            the_value: hidden_pair_drafts.to_vec().clone(),
+                            the_value: hidden_pair_drafts.to_vec(),
                         })
                         .collect();
                     let conclusion: Vec<TheCoordsAndTheValue> = combo
@@ -1209,7 +1212,7 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                             {
                                 Some(TheCoordsAndTheValue {
                                     the_coords: vg[i].coords,
-                                    the_value: rest_union_drafts.to_vec().clone(),
+                                    the_value: rest_union_drafts.to_vec(),
                                 })
                             } else {
                                 None
@@ -1251,11 +1254,11 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                 .collect();
 
             return format!(
-                "{} 在 C{:?} 内形成了隐性数对 {} ，因此该 C{:?} 内 {} 不能填写 {} ",
+                "{} 在 G{:?} 内形成了隐性数对 {} ，因此该 G{:?} 内 {} 不能填写 {} ",
                 condition_cells.join(" "),
-                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
+                Into::<GNCoords>::into(conclusion_remove_drafts[0].the_coords).g + 1,
                 condition_values.join(" "),
-                Into::<RCCoords>::into(conclusion_remove_drafts[0].the_coords).c + 1,
+                Into::<GNCoords>::into(conclusion_remove_drafts[0].the_coords).g + 1,
                 condition_cells.join(" "),
                 removed_values.join(" ")
             );
