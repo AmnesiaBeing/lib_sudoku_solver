@@ -1,4 +1,5 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::utils::create_simple_cell_and_value;
 
@@ -82,7 +83,7 @@ impl From<RCCoords> for GNCoords {
     }
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Drafts {
     pub drafts: [bool; 9],
 }

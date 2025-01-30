@@ -2,6 +2,14 @@ pub mod inferences;
 pub mod types;
 pub mod utils;
 
+use types::Field;
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub fn new(a: i32, b: i32) -> Field {
+    a + b
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{inferences::InferenceSet, types::Field, utils::generate_combinations};
