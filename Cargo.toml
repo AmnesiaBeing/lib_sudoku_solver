@@ -14,3 +14,7 @@ wasm-bindgen = "0.2.100"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+lto = true
+opt-level = "z"  # 更小的体积

@@ -3,11 +3,211 @@ pub mod types;
 pub mod utils;
 
 use types::Field;
+
 use wasm_bindgen::prelude::*;
+use rand::seq::SliceRandom;
+use rand::Rng;
+use std::collections::HashSet;
 
 #[wasm_bindgen]
-pub fn new(a: i32, b: i32) -> Field {
-    a + b
+pub struct Sudoku {
+    puzzle: [[u8; 9]; 9],
+    solution: [[u8; 9]; 9],
+}
+
+#[wasm_bindgen]
+impl Sudoku {
+    #[wasm_bindgen(constructor)]
+    pub fn new(difficulty: &str) -> Self {
+        let (puzzle, solution) = generate_sudoku(difficulty);
+        Sudoku { puzzle, solution }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn puzzle(&self) -> Vec<u8> {
+        self.puzzle.iter().flatten().cloned().collect()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn solution(&self) -> Vec<u8> {
+        self.solution.iter().flatten().cloned().collect()
+    }
+}
+
+fn generate_sudoku(difficulty: &str) -> ([[u8; 9]; 9], [[u8; 9]; 9]) {
+    let mut base = create_base_board();
+    let (mut puzzle, mut solution) = dig_holes(&mut base, difficulty);
+    shuffle_boards(&mut puzzle, &mut solution);
+    (puzzle, solution)
+}
+
+fn create_base_board() -> [[u8; 9]; 9] {
+    let mut board = [[0; 9]; 9];
+    for i in 0..9 {
+        for j in 0..9 {
+            board[i][j] = ((i * 3 + i / 3 + j) % 9 + 1) as u8;
+        }
+    }
+    board
+}
+
+fn dig_holes(base: &mut [[u8; 9]; 9], difficulty: &str) -> ([[u8; 9]; 9], [[u8; 9]; 9]) {
+    let mut solution = *base;
+    let mut puzzle = *base;
+    
+    phase1_dig(&mut puzzle);
+    
+    let max_digs = match difficulty {
+        "easy" => 5,
+        "medium" => 15,
+        "hard" => 30,
+        _ => 15,
+    };
+    phase2_dig(&mut puzzle, &solution, max_digs);
+    
+    (puzzle, solution)
+}
+
+fn phase1_dig(puzzle: &mut [[u8; 9]; 9]) {
+    let mut positions: Vec<(usize, usize)> = (0..9).flat_map(|i| (0..9).map(move |j| (i, j))).collect();
+    positions.shuffle(&mut rand::thread_rng());
+    
+    for (i, j) in positions {
+        let original = puzzle[i][j];
+        puzzle[i][j] = 0;
+        if !check_uniqueness(&puzzle) {
+            puzzle[i][j] = original;
+        }
+    }
+}
+
+fn phase2_dig(puzzle: &mut [[u8; 9]; 9], solution: &[[u8; 9]; 9], max_digs: usize) {
+    let mut empty_cells: Vec<(usize, usize)> = puzzle.iter()
+        .enumerate()
+        .flat_map(|(i, row)| row.iter()
+            .enumerate()
+            .filter(|(_, &v)| v != 0)
+            .map(move |(j, _)| (i, j)))
+        .collect();
+    empty_cells.shuffle(&mut rand::thread_rng());
+    
+    for (i, j) in empty_cells.into_iter().take(max_digs) {
+        let original = puzzle[i][j];
+        puzzle[i][j] = 0;
+        if !check_uniqueness(&puzzle) {
+            puzzle[i][j] = original;
+        }
+    }
+}
+
+fn shuffle_boards(puzzle: &mut [[u8; 9]; 9], solution: &mut [[u8; 9]; 9]) {
+    let mut rng = rand::thread_rng();
+    
+    // 行交换
+    for _ in 0..3 {
+        let block = rng.gen_range(0..3);
+        let mut rows: Vec<usize> = (block*3..(block+1)*3).collect();
+        rows.shuffle(&mut rng);
+        if let [r1, r2] = rows[..2] {
+            puzzle.swap(r1, r2);
+            solution.swap(r1, r2);
+        }
+    }
+    
+    // 列交换
+    for _ in 0..3 {
+        let block = rng.gen_range(0..3);
+        let mut cols: Vec<usize> = (block*3..(block+1)*3).collect();
+        cols.shuffle(&mut rng);
+        if let [c1, c2] = cols[..2] {
+            for row in puzzle.iter_mut() {
+                row.swap(c1, c2);
+            }
+            for row in solution.iter_mut() {
+                row.swap(c1, c2);
+            }
+        }
+    }
+    
+    // 数字替换
+    let mut numbers: Vec<u8> = (1..=9).collect();
+    numbers.shuffle(&mut rng);
+    let replace_map: Vec<u8> = (1..=9).map(|i| numbers[i as usize - 1]).collect();
+    
+    for i in 0..9 {
+        for j in 0..9 {
+            solution[i][j] = replace_map[solution[i][j] as usize - 1];
+            if puzzle[i][j] != 0 {
+                puzzle[i][j] = replace_map[puzzle[i][j] as usize - 1];
+            }
+        }
+    }
+}
+
+fn check_uniqueness(puzzle: &[[u8; 9]; 9]) -> bool {
+    let mut count = 0;
+    let mut empty = vec![];
+    
+    for i in 0..9 {
+        for j in 0..9 {
+            if puzzle[i][j] == 0 {
+                empty.push((i, j));
+            }
+        }
+    }
+    
+    if empty.is_empty() {
+        return true;
+    }
+    
+    let (i, j) = empty[0];
+    let candidates = get_candidates(puzzle, i, j);
+    
+    for num in candidates {
+        let mut new_puzzle = *puzzle;
+        new_puzzle[i][j] = num;
+        if check_uniqueness(&new_puzzle) {
+            count += 1;
+            if count > 1 {
+                return false;
+            }
+        }
+    }
+    
+    count == 1
+}
+
+fn get_candidates(puzzle: &[[u8; 9]; 9], i: usize, j: usize) -> Vec<u8> {
+    let mut used = HashSet::new();
+    
+    // 行检查
+    for &num in &puzzle[i] {
+        if num != 0 {
+            used.insert(num);
+        }
+    }
+    
+    // 列检查
+    for row in puzzle {
+        let num = row[j];
+        if num != 0 {
+            used.insert(num);
+        }
+    }
+    
+    // 宫格检查
+    let start_i = (i / 3) * 3;
+    let start_j = (j / 3) * 3;
+    for x in 0..3 {
+        for y in 0..3 {
+            let num = puzzle[start_i + x][start_j + y];
+            if num != 0 {
+                used.insert(num);
+            }
+        }
+    }
+    
+    (1..=9).filter(|n| !used.contains(n)).collect()
 }
 
 #[cfg(test)]
