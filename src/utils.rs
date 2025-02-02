@@ -2,7 +2,7 @@
 
 use crate::{
     inferences::TheCoordsAndTheValue,
-    types::{Cell, CellValue, Coords, Field, GNCoords, RCCoords},
+    types::{Cell, CellValue, Coords, Sudoku, GNCoords, RCCoords},
 };
 
 // 定义子函数，将一个集合拆分成X和剩余部分的两个集合，且 2<=X<=4
@@ -32,7 +32,7 @@ pub fn generate_combinations(
 
 // 当某个格子设置某个值的时候，将同行列宫的该值的草稿值移除，输入值在vec_set_value.cells内，且value唯一
 pub fn make_simple_conclusion_when_set_value<'a>(
-    field: &'a Field,
+    field: &'a Sudoku,
     coords: &'a Coords,
     value: CellValue,
 ) -> Option<Vec<TheCoordsAndTheValue>> {

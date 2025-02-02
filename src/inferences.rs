@@ -1,5 +1,5 @@
 use crate::{
-    types::{Cell, CellStatus, CellValue, Coords, Drafts, Field, GNCoords, RCCoords},
+    types::{Cell, CellStatus, CellValue, Coords, Drafts, Sudoku, GNCoords, RCCoords},
     utils::{
         create_simple_cell_and_value, get_coords_with_direction, get_rc_coord_with_direction,
         make_simple_conclusion_when_set_value, IterDirection,
@@ -28,7 +28,7 @@ pub struct InferenceResult<'a> {
 }
 
 trait Inference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>>;
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>>;
     fn write_result(&self, inference_result: &InferenceResult) -> String;
 }
 
@@ -60,11 +60,11 @@ impl InferenceSet {
         }
     }
 
-    pub fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    pub fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         self.inferences.iter().find_map(|inf| inf.analyze(field))
     }
 
-    pub fn apply(field: &mut Field, result: InferenceResult) {
+    pub fn apply(field: &mut Sudoku, result: InferenceResult) {
         if result.conclusion_set_value.is_some() {
             result.conclusion_set_value.unwrap().iter().for_each(|cv| {
                 let p = field.get_cell_mut_by_coords(cv.the_coords);
@@ -95,7 +95,7 @@ impl<'a> std::fmt::Debug for InferenceResult<'a> {
 #[derive(Clone)]
 struct OnlyOneLeftInference;
 impl Inference for OnlyOneLeftInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.collect_all_drafts_cells().iter().find_map(|&p| {
             p.drafts.try_get_the_only_one().map(|cv| {
                 let condition = TheCoordsAndTheValue {
@@ -145,7 +145,7 @@ impl Inference for OnlyOneLeftInference {
 /// 按行排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
 struct OnlyOneRightInRowInference;
 impl Inference for OnlyOneRightInRowInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
             vr.iter().find_map(|&p| {
                 p.drafts
@@ -203,7 +203,7 @@ impl Inference for OnlyOneRightInRowInference {
 /// 按列排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
 struct OnlyOneRightInColInference;
 impl Inference for OnlyOneRightInColInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
             vc.iter().find_map(|&p| {
                 p.drafts
@@ -261,7 +261,7 @@ impl Inference for OnlyOneRightInColInference {
 ///  按宫排除法，每行中如果存在唯一草稿值，则填写该值，同时去除其余同一列宫的草稿值
 struct OnlyOneRightInGridInference;
 impl Inference for OnlyOneRightInGridInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
             vg.iter().find_map(|&p| {
                 p.drafts
@@ -319,7 +319,7 @@ impl Inference for OnlyOneRightInGridInference {
 /// 当一宫内的某种草稿值当且仅当在同一行时，可以排除该行内其余格子的该草稿值
 struct RowUniqueDraftByGridExclusionInference;
 impl Inference for RowUniqueDraftByGridExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
             CellValue::iter().find_map(|v| {
                 let cells_with_value = vg
@@ -404,7 +404,7 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
 /// 当一宫内的某种草稿值当且仅当在同一列时，可以排除该列内其余格子的该草稿值
 struct ColUniqueDraftByGridExclusionInference;
 impl Inference for ColUniqueDraftByGridExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
             CellValue::iter().find_map(|v| {
                 let cells_with_value = vg
@@ -489,7 +489,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
 /// 当一行的草稿数正好在一宫时，排除该宫的其他草稿数
 struct GridUniqueDraftByRowExclusionInference;
 impl Inference for GridUniqueDraftByRowExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
             CellValue::iter().find_map(|v| {
                 vr.iter()
@@ -568,7 +568,7 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
 /// 当一列的草稿数正好在一宫时，排除该宫的其他草稿数
 struct GridUniqueDraftByColExclusionInference;
 impl Inference for GridUniqueDraftByColExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
             CellValue::iter().find_map(|v| {
                 vc.iter()
@@ -648,7 +648,7 @@ impl Inference for GridUniqueDraftByColExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
 struct RowExplicitNakedPairExclusionInference;
 impl Inference for RowExplicitNakedPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vr in field.iter_all_drafts_cells_by_rc() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
@@ -748,7 +748,7 @@ impl Inference for RowExplicitNakedPairExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
 struct ColExplicitNakedPairExclusionInference;
 impl Inference for ColExplicitNakedPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vc in field.iter_all_drafts_cells_by_cr() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
@@ -848,7 +848,7 @@ impl Inference for ColExplicitNakedPairExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是X，称之为【数对】，其中 2<=X<=4
 struct GridExplicitNakedPairExclusionInference;
 impl Inference for GridExplicitNakedPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vg in field.iter_all_drafts_cells_by_gn() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
@@ -948,7 +948,7 @@ impl Inference for GridExplicitNakedPairExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
 struct RowExplicitHiddenPairExclusionInference;
 impl Inference for RowExplicitHiddenPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vr in field.iter_all_drafts_cells_by_rc() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
@@ -1055,7 +1055,7 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
 struct ColExplicitHiddenPairExclusionInference;
 impl Inference for ColExplicitHiddenPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vc in field.iter_all_drafts_cells_by_cr() {
             let mut all_combinations = Vec::new();
             for size in 2..=4 {
@@ -1162,7 +1162,7 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
 /// 定义：X个格子内的候选数字的并集，数量正好是总候选数-X，则称剩余候选数组成的集合为【数对】，其中 2<=X<=4
 struct GridExplicitHiddenPairExclusionInference;
 impl Inference for GridExplicitHiddenPairExclusionInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         for vg in field.iter_all_drafts_cells_by_gn() {
             let all_combinations = (2..=4)
                 .flat_map(|size| {
@@ -1271,7 +1271,7 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
 /// n阶Fish，在一个维度（行/列）中，某个数字只出现在n个单元格中，且正好有n-1个维度的单元格正好位于相同的另一个列中（允许残缺，不允许多）
 struct NStepFishInference;
 impl Inference for NStepFishInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         // 构造返回条件
         fn create_condition(
             v: CellValue,
@@ -1301,7 +1301,7 @@ impl Inference for NStepFishInference {
 
         // 构造返回结论
         fn create_conclusion<'a>(
-            field: &'a Field,
+            field: &'a Sudoku,
             v: CellValue,
             direction: &'a IterDirection,
             one_indexes: &[usize],   // 阶数个usize的数组
@@ -1343,7 +1343,7 @@ impl Inference for NStepFishInference {
         // 返回值是某个遍历维度下，所有满足该行/列中只有两个value的坐标
         fn self_analyze_with_direction<'a>(
             inference: &'a dyn Inference,
-            field: &'a Field,
+            field: &'a Sudoku,
             v: CellValue,
             direction: &'a IterDirection,
         ) -> Option<InferenceResult<'a>> {
@@ -1461,7 +1461,7 @@ impl Inference for NStepFishInference {
 /// 如果数独存在多解，也返回None
 struct ExploitInference;
 impl Inference for ExploitInference {
-    fn analyze<'a>(&'a self, field: &'a Field) -> Option<InferenceResult<'a>> {
+    fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         let solve_field = field.sovle();
 
         if solve_field.is_empty() {
