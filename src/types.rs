@@ -1,16 +1,15 @@
 use rand::{seq::SliceRandom, Rng};
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::utils::create_simple_cell_and_value;
-
 #[derive(Copy, Clone, PartialEq)]
+#[wasm_bindgen]
 pub struct RCCoords {
     pub r: usize,
     pub c: usize,
 }
 
 #[derive(Copy, Clone, PartialEq)]
+#[wasm_bindgen]
 pub struct GNCoords {
     pub g: usize,
     pub n: usize,
@@ -84,117 +83,96 @@ impl From<RCCoords> for GNCoords {
     }
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Drafts {
-    pub drafts: [bool; 9],
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[wasm_bindgen]
+pub struct Candidate {
+    // 以位的方式存储候选数，低9位有效
+    pub bitmask: u32,
 }
 
-impl Drafts {
-    pub fn new_all_false() -> Drafts {
-        Drafts { drafts: [false; 9] }
+impl Candidate {
+    pub fn new_all_false() -> Candidate {
+        Candidate { bitmask: 0x000 }
     }
 
-    pub fn new_all_true() -> Drafts {
-        Drafts { drafts: [true; 9] }
+    pub fn new_all_true() -> Candidate {
+        Candidate { bitmask: 0x1FF }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.drafts.contains(&true)
+        self.bitmask == 0x000
     }
 
-    pub fn try_get_the_only_one(&self) -> Option<CellValue> {
-        let mut flag = false;
-        let mut ret = 0;
-        for i in 0..9 {
-            if self.drafts[i] {
-                if flag {
-                    return None;
-                }
-                ret = i;
-                flag = true;
+    pub fn get_unique_candidate(&self) -> Option<CellValue> {
+        const fn bit_to_num() -> [u32; 9] {
+            let mut result = [0; 9];
+            let mut i = 0;
+            while i < 9 {
+                result[i] = 0x001 << i;
+                i += 1;
             }
+            result
         }
-        return Some(CellValue::from_value((ret + 1) as u32).unwrap());
+        const BIT_TO_NUM: [u32; 9] = bit_to_num();
+
+        CellValue::try_from((BIT_TO_NUM.iter().position(|p| *p == self.bitmask)?) as u32 + 1).ok()
     }
 
     pub fn add_draft(&mut self, v: CellValue) {
         if v != CellValue::INVAILD {
-            self.drafts[v.to_index().unwrap()] = true;
+            self.bitmask &= 0x001 << (v as u32 - 1);
         }
     }
 
     pub fn remove_draft(&mut self, v: CellValue) {
         if v != CellValue::INVAILD {
-            self.drafts[v.to_index().unwrap()] = false;
+            self.bitmask &= !(0x001 << (v as u32 - 1));
         }
     }
 
     pub fn is_contain(&self, v: CellValue) -> bool {
-        self.drafts[v.to_index().unwrap()]
+        v != CellValue::INVAILD && (self.bitmask & (0x001 << (v as u32 - 1))) != 0
     }
 
-    pub fn find_value(&self, v: CellValue) -> Option<CellValue> {
-        self.is_contain(v).then_some(v)
+    // pub fn delta_to(&self, other: Candidate) -> u32 {
+    //     self.bitmask ^ other.bitmask
+    // }
+
+    pub fn len(&self) -> u32 {
+        self.bitmask.count_ones()
+    }
+
+    pub fn union(&self, other: &Candidate) -> Candidate {
+        Candidate {
+            bitmask: self.bitmask | other.bitmask,
+        }
+    }
+
+    pub fn intersect(&self, other: &Candidate) -> Candidate {
+        Candidate {
+            bitmask: self.bitmask & other.bitmask,
+        }
+    }
+
+    pub fn subtract(&self, other: &Candidate) -> Candidate {
+        Candidate {
+            bitmask: self.bitmask & !other.bitmask,
+        }
     }
 
     pub fn to_vec(&self) -> Vec<CellValue> {
-        self.drafts
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &draft)| {
-                if draft {
-                    Some(CellValue::from_value((i + 1) as u32).unwrap())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    pub fn delta_to(&self, other: Drafts) -> usize {
-        self.drafts
-            .iter()
-            .zip(other.drafts.iter())
-            .filter(|(a, b)| a != b)
-            .count()
-    }
-
-    pub fn len(&self) -> usize {
-        self.drafts.iter().filter(|&&draft| draft).count()
-    }
-
-    pub fn union(&self, other: Drafts) -> Drafts {
-        let mut ret: Drafts = Drafts::default();
+        let mut values = Vec::new();
         for i in 0..9 {
-            if self.drafts[i] || other.drafts[i] {
-                ret.drafts[i] = true;
+            if self.bitmask & (0x001 << i) != 0 {
+                values.push(CellValue::try_from((i + 1) as u32).unwrap());
             }
         }
-        ret
-    }
-
-    pub fn intersect(&self, other: Drafts) -> Drafts {
-        let mut ret: Drafts = Drafts::default();
-        for i in 0..9 {
-            if self.drafts[i] && other.drafts[i] {
-                ret.drafts[i] = true;
-            }
-        }
-        ret
-    }
-
-    pub fn subtract(&self, other: Drafts) -> Drafts {
-        let mut ret: Drafts = Drafts::default();
-        for i in 0..9 {
-            if self.drafts[i] && !other.drafts[i] {
-                ret.drafts[i] = true;
-            }
-        }
-        ret
+        values
     }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[wasm_bindgen]
 pub enum CellStatus {
     // 固定数值
     FIXED,
@@ -205,6 +183,7 @@ pub enum CellStatus {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[wasm_bindgen]
 pub enum CellValue {
     INVAILD = 0,
     V1 = 1,
@@ -218,9 +197,11 @@ pub enum CellValue {
     V9 = 9,
 }
 
-impl CellValue {
-    pub fn from_value(v: u32) -> Result<CellValue, &'static str> {
-        match v {
+impl TryFrom<u32> for CellValue {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
             0 => Ok(CellValue::INVAILD),
             1 => Ok(CellValue::V1),
             2 => Ok(CellValue::V2),
@@ -234,24 +215,11 @@ impl CellValue {
             _ => Err("Invalid Cell Value."),
         }
     }
+}
 
-    pub fn to_index(&self) -> Result<usize, &'static str> {
-        match *self {
-            CellValue::V1 => Ok(0),
-            CellValue::V2 => Ok(1),
-            CellValue::V3 => Ok(2),
-            CellValue::V4 => Ok(3),
-            CellValue::V5 => Ok(4),
-            CellValue::V6 => Ok(5),
-            CellValue::V7 => Ok(6),
-            CellValue::V8 => Ok(7),
-            CellValue::V9 => Ok(8),
-            CellValue::INVAILD => Err("Invalid Cell Value."),
-        }
-    }
-
-    pub fn iter() -> <Vec<CellValue> as IntoIterator>::IntoIter {
-        vec![
+impl CellValue {
+    pub const fn values() -> [Self; 9] {
+        [
             CellValue::V1,
             CellValue::V2,
             CellValue::V3,
@@ -262,24 +230,25 @@ impl CellValue {
             CellValue::V8,
             CellValue::V9,
         ]
-        .into_iter()
     }
 }
 
 #[derive(Clone)]
+#[wasm_bindgen]
 pub struct Cell {
     pub rc: RCCoords,
     pub gn: GNCoords,
+    #[wasm_bindgen(skip)]
     pub coords: Coords,
     pub status: CellStatus,
-    pub drafts: Drafts,
+    pub candidates: Candidate,
     pub value: CellValue,
 }
 
-impl std::fmt::Debug for Drafts {
+impl std::fmt::Debug for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..9 {
-            if self.drafts[i] {
+            if self.bitmask & (0x001 << i) != 0 {
                 write!(f, "{}", i + 1)?;
             }
         }
@@ -305,7 +274,7 @@ impl std::fmt::Debug for Cell {
         match self.status {
             CellStatus::FIXED | CellStatus::SOLVE => write!(f, "{:?};", self.value),
             CellStatus::DRAFT => {
-                write!(f, "D{:?};", self.drafts)
+                write!(f, "D{:?};", self.candidates)
             }
         }
     }
@@ -313,6 +282,7 @@ impl std::fmt::Debug for Cell {
 
 /// 数组本体
 #[derive(Clone)]
+#[wasm_bindgen]
 pub struct Sudoku {
     cells: [Cell; 81],
 }
@@ -402,320 +372,116 @@ impl Sudoku {
                     value,
                     rc: _,
                     gn,
-                    drafts: _,
+                    candidates: _,
                 } = self.get_cell_ref_by_rc(rc);
                 if status == CellStatus::FIXED {
                     for i in 0..9 {
                         let p_cell = self.get_cell_mut_by_rc(RCCoords { r: i, c });
-                        p_cell.drafts.remove_draft(value);
+                        p_cell.candidates.remove_draft(value);
 
                         let p_cell = self.get_cell_mut_by_rc(RCCoords { r, c: i });
-                        p_cell.drafts.remove_draft(value);
+                        p_cell.candidates.remove_draft(value);
 
                         let g = gn.g;
                         let p_cell = self.get_cell_mut_by_gn(GNCoords { g, n: i });
-                        p_cell.drafts.remove_draft(value);
+                        p_cell.candidates.remove_draft(value);
                     }
                 }
             }
-        }
-    }
-
-    // 从字符串初始化数独，要求输入字符串长度必须为81，且仅为0-9的数字
-    pub fn initial_by_string(input: &String) -> Result<Sudoku, &'static str> {
-        if input.len() != 81 {
-            return Err("Invalid String Length.");
-        }
-
-        let mut field: Sudoku = unsafe {
-            let mut field = std::mem::MaybeUninit::<Sudoku>::uninit();
-            let p_field: *mut Sudoku = field.as_mut_ptr();
-            let p_cell: *mut Cell = (*p_field).cells.as_mut_ptr();
-
-            for (index, item) in input.chars().enumerate() {
-                let tmp = item.to_digit(10).expect("Invalid Character.");
-                let rc = RCCoords::from_idx(index);
-                let gn = rc.into();
-                let coords = rc.into();
-                let status = if tmp == 0 {
-                    CellStatus::DRAFT
-                } else {
-                    CellStatus::FIXED
-                };
-                let value = if tmp == 0 {
-                    CellValue::INVAILD
-                } else {
-                    CellValue::from_value(tmp).expect("Invalid Value.")
-                };
-                std::ptr::write(
-                    p_cell.offset(index as isize),
-                    Cell {
-                        rc,
-                        gn,
-                        coords,
-                        status,
-                        drafts: Drafts::new_all_true(),
-                        value,
-                    },
-                );
-            }
-
-            field.assume_init()
-        };
-
-        field.fill_drafts();
-
-        Ok(field)
-    }
-
-    // 采用洗牌算法+随机挖空生成随机数独
-    pub fn new() -> Self {
-        fn generate_sudoku(difficulty: &str) -> ([[u8; 9]; 9], [[u8; 9]; 9]) {
-            let mut base = create_base_board();
-            let (mut puzzle, mut solution) = dig_holes(&mut base, difficulty);
-            // shuffle_boards(&mut puzzle, &mut solution);
-            println!("{:?}", puzzle);
-            (puzzle, solution)
-        }
-
-        fn create_base_board() -> [[u8; 9]; 9] {
-            let mut board = [[0; 9]; 9];
-            for i in 0..9 {
-                for j in 0..9 {
-                    board[i][j] = if (i * 3) % 9 + i / 3 == j {
-                        0
-                    } else {
-                        ((i * 3 + i / 3 + j) % 9 + 1) as u8
-                    };
-                }
-            }
-            board
-        }
-
-        fn dig_holes(base: &mut [[u8; 9]; 9], difficulty: &str) -> ([[u8; 9]; 9], [[u8; 9]; 9]) {
-            let mut solution = *base;
-            let mut puzzle = *base;
-
-            let max_digs = match difficulty {
-                "easy" => 5,
-                "medium" => 15,
-                "hard" => 55,
-                _ => 15,
-            };
-            phase2_dig(&mut puzzle, &solution, max_digs);
-
-            (puzzle, solution)
-        }
-
-        fn phase2_dig(puzzle: &mut [[u8; 9]; 9], solution: &[[u8; 9]; 9], max_digs: usize) {
-            let mut empty_cells: Vec<(usize, usize)> = puzzle
-                .iter()
-                .enumerate()
-                .flat_map(|(i, row)| {
-                    row.iter()
-                        .enumerate()
-                        .filter(|(_, &v)| v != 0)
-                        .map(move |(j, _)| (i, j))
-                })
-                .collect();
-            empty_cells.shuffle(&mut rand::thread_rng());
-
-            for (i, j) in empty_cells.into_iter().take(max_digs) {
-                let original = puzzle[i][j];
-                puzzle[i][j] = 0;
-                if !check_uniqueness(&puzzle) {
-                    puzzle[i][j] = original;
-                }
-            }
-        }
-
-        fn shuffle_boards(puzzle: &mut [[u8; 9]; 9], solution: &mut [[u8; 9]; 9]) {
-            let mut rng = rand::thread_rng();
-
-            // 行交换
-            for _ in 0..3 {
-                let block = rng.gen_range(0..3);
-                let mut rows: Vec<usize> = (block * 3..(block + 1) * 3).collect();
-                rows.shuffle(&mut rng);
-                if let [r1, r2] = rows[..2] {
-                    puzzle.swap(r1, r2);
-                    solution.swap(r1, r2);
-                }
-            }
-
-            // 列交换
-            for _ in 0..3 {
-                let block = rng.gen_range(0..3);
-                let mut cols: Vec<usize> = (block * 3..(block + 1) * 3).collect();
-                cols.shuffle(&mut rng);
-                if let [c1, c2] = cols[..2] {
-                    for row in puzzle.iter_mut() {
-                        row.swap(c1, c2);
-                    }
-                    for row in solution.iter_mut() {
-                        row.swap(c1, c2);
-                    }
-                }
-            }
-
-            // 数字替换
-            let mut numbers: Vec<u8> = (1..=9).collect();
-            numbers.shuffle(&mut rng);
-            let replace_map: Vec<u8> = (1..=9).map(|i| numbers[i as usize - 1]).collect();
-
-            for i in 0..9 {
-                for j in 0..9 {
-                    solution[i][j] = replace_map[solution[i][j] as usize - 1];
-                    if puzzle[i][j] != 0 {
-                        puzzle[i][j] = replace_map[puzzle[i][j] as usize - 1];
-                    }
-                }
-            }
-        }
-
-        fn check_uniqueness(puzzle: &[[u8; 9]; 9]) -> bool {
-            let mut count = 0;
-            let mut empty = vec![];
-
-            for i in 0..9 {
-                for j in 0..9 {
-                    if puzzle[i][j] == 0 {
-                        empty.push((i, j));
-                    }
-                }
-            }
-
-            if empty.is_empty() {
-                return true;
-            }
-
-            let (i, j) = empty[0];
-            let candidates = get_candidates(puzzle, i, j);
-
-            for num in candidates {
-                let mut new_puzzle = *puzzle;
-                new_puzzle[i][j] = num;
-                if check_uniqueness(&new_puzzle) {
-                    count += 1;
-                    if count > 1 {
-                        return false;
-                    }
-                }
-            }
-
-            count == 1
-        }
-
-        fn get_candidates(puzzle: &[[u8; 9]; 9], i: usize, j: usize) -> Vec<u8> {
-            let mut used = std::collections::HashSet::new();
-
-            // 行检查
-            for &num in &puzzle[i] {
-                if num != 0 {
-                    used.insert(num);
-                }
-            }
-
-            // 列检查
-            for row in puzzle {
-                let num = row[j];
-                if num != 0 {
-                    used.insert(num);
-                }
-            }
-
-            // 宫格检查
-            let start_i = (i / 3) * 3;
-            let start_j = (j / 3) * 3;
-            for x in 0..3 {
-                for y in 0..3 {
-                    let num = puzzle[start_i + x][start_j + y];
-                    if num != 0 {
-                        used.insert(num);
-                    }
-                }
-            }
-
-            (1..=9).filter(|n| !used.contains(n)).collect()
         }
     }
 
     // 打印数独，用特殊效果显示草稿、固定值、填写值
     pub fn print(&self) {
-        println!("╔═══╤═══╤═══╦═══╤═══╤═══╦═══╤═══╤═══╗");
+        const TOP_BORDER: &str = "╔═══╤═══╤═══╦═══╤═══╤═══╦═══╤═══╤═══╗";
+        const BOTTOM_BORDER: &str = "╚═══╧═══╧═══╩═══╧═══╧═══╩═══╧═══╧═══╝";
+        const MIDDLE_BORDER: &str = "╠═══╪═══╪═══╬═══╪═══╪═══╬═══╪═══╪═══╣";
+        const SUB_BORDER: &str = "╟───┼───┼───╫───┼───┼───╫───┼───┼───╢";
+
+        fn format_draft(p: &Cell, m: usize) -> String {
+            (0..3)
+                .map(|n| {
+                    if p.candidates.bitmask & (0x001 << m * 3 + n) != 0 {
+                        (m * 3 + n + 1).to_string()
+                    } else {
+                        " ".to_string()
+                    }
+                })
+                .collect()
+        }
+
+        fn format_fixed(p: &Cell, m: usize) -> String {
+            match m {
+                0 => "\\ /".to_string(),
+                1 => format!(" {} ", p.value as u32),
+                _ => "/ \\".to_string(),
+            }
+        }
+
+        fn format_solve(p: &Cell, m: usize) -> String {
+            match m {
+                0 => "***".to_string(),
+                1 => format!("*{}*", p.value as u32),
+                _ => "***".to_string(),
+            }
+        }
+
+        println!("{}", TOP_BORDER);
+
         for r in 0..9 {
             for m in 0..3 {
                 let mut line = String::from("║");
                 for c in 0..9 {
                     let p = &self.cells[r * 9 + c];
                     line += &match p.status {
-                        CellStatus::DRAFT => (0..3)
-                            .map(|n| {
-                                if p.drafts.drafts[m * 3 + n] {
-                                    (m * 3 + n + 1).to_string()
-                                } else {
-                                    " ".to_string()
-                                }
-                            })
-                            .collect::<String>(),
-                        CellStatus::FIXED => match m {
-                            0 => "\\ /".to_string(),
-                            1 => format!(" {} ", p.value as u32),
-                            _ => "/ \\".to_string(),
-                        },
-                        CellStatus::SOLVE => match m {
-                            0 => "***".to_string(),
-                            1 => format!("*{}*", p.value as u32),
-                            _ => "***".to_string(),
-                        },
+                        CellStatus::DRAFT => format_draft(p, m),
+                        CellStatus::FIXED => format_fixed(p, m),
+                        CellStatus::SOLVE => format_solve(p, m),
                     };
                     line += if c % 3 == 2 { "║" } else { "│" };
                 }
                 println!("{}", line);
             }
+
             if r == 8 {
-                println!("╚═══╧═══╧═══╩═══╧═══╧═══╩═══╧═══╧═══╝");
+                println!("{}", BOTTOM_BORDER);
             } else if r % 3 == 2 {
-                println!("╠═══╪═══╪═══╬═══╪═══╪═══╬═══╪═══╪═══╣");
+                println!("{}", MIDDLE_BORDER);
             } else {
-                println!("╟───┼───┼───╫───┼───┼───╫───┼───┼───╢");
+                println!("{}", SUB_BORDER);
             }
         }
     }
 
-    pub fn sovle(&self) -> Vec<Sudoku> {
-        let mut field = self.clone();
-        let mut solutions: Vec<Sudoku> = Vec::new();
-
-        unsafe fn self_solve_field(field: &mut Sudoku, solutions: &mut Vec<Sudoku>) -> bool {
-            fn is_valid(r: usize, c: usize, v: CellValue, field: &Sudoku) -> bool {
-                let GNCoords { g, n: _ } = RCCoords { r, c }.into();
-                for i in 0..9 {
-                    if field.get_cell_ref_by_rc(RCCoords { r, c: i }).value == v {
-                        return false;
-                    }
-                    if field.get_cell_ref_by_rc(RCCoords { r: i, c }).value == v {
-                        return false;
-                    }
-                    if field.get_cell_ref_by_gn(GNCoords { g, n: i }).value == v {
-                        return false;
-                    }
+    fn self_solve_field(field: &mut Sudoku, solutions: &mut Vec<Sudoku>) -> bool {
+        fn is_valid(r: usize, c: usize, v: CellValue, field: &Sudoku) -> bool {
+            let GNCoords { g, n: _ } = RCCoords { r, c }.into();
+            for i in 0..9 {
+                if field.get_cell_ref_by_rc(RCCoords { r, c: i }).value == v {
+                    return false;
                 }
-                true
+                if field.get_cell_ref_by_rc(RCCoords { r: i, c }).value == v {
+                    return false;
+                }
+                if field.get_cell_ref_by_gn(GNCoords { g, n: i }).value == v {
+                    return false;
+                }
             }
-
+            true
+        }
+        unsafe {
             // 找到第一个草稿状态的单元格
             for r in 0..9 {
                 for c in 0..9 {
                     let idx = r * 9 + c;
                     let cell: *mut Cell = core::ptr::addr_of_mut!(field.cells[idx]);
                     if (*cell).status == CellStatus::DRAFT {
-                        for &num in &(*cell).drafts.to_vec() {
+                        for &num in &(*cell).candidates.to_vec() {
                             if is_valid(r, c, num, &field) {
                                 (*cell).value = num;
                                 (*cell).status = CellStatus::SOLVE;
 
-                                if self_solve_field(field, solutions) {
+                                if Self::self_solve_field(field, solutions) {
                                     solutions.push(field.clone());
                                     if solutions.len() >= 2 {
                                         return true;
@@ -731,13 +497,16 @@ impl Sudoku {
                     }
                 }
             }
-
-            true // 如果所有单元格都已解决，则返回true
         }
 
-        unsafe {
-            self_solve_field(&mut field, &mut solutions);
-        }
+        true // 如果所有单元格都已解决，则返回true
+    }
+
+    pub fn sovle(&self) -> Vec<Sudoku> {
+        let mut field = self.clone();
+        let mut solutions: Vec<Sudoku> = Vec::new();
+
+        Self::self_solve_field(&mut field, &mut solutions);
 
         solutions
     }
@@ -835,7 +604,7 @@ impl Sudoku {
                 (0..9)
                     .into_iter()
                     .map(|c| self.get_cell_ref_by_rc(RCCoords { r, c }))
-                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).drafts.is_contain(v))
+                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).candidates.is_contain(v))
                     .collect()
             })
             .collect::<Vec<Vec<&Cell>>>()
@@ -854,14 +623,14 @@ impl Sudoku {
 
         for i in 0..9 {
             let p_cell = self.get_cell_ref_by_rc(RCCoords { r: i, c });
-            if p_cell.status == CellStatus::DRAFT && p_cell.drafts.is_contain(value) {
+            if p_cell.status == CellStatus::DRAFT && p_cell.candidates.is_contain(value) {
                 coords.push(p_cell.coords);
             }
 
             let p_cell = self.get_cell_ref_by_rc(RCCoords { r, c: i });
             if p_cell.rc.c != c
                 && p_cell.status == CellStatus::DRAFT
-                && p_cell.drafts.is_contain(value)
+                && p_cell.candidates.is_contain(value)
             {
                 coords.push(p_cell.coords);
             }
@@ -870,7 +639,7 @@ impl Sudoku {
             if p_cell.rc.r != r
                 && p_cell.rc.c != c
                 && p_cell.status == CellStatus::DRAFT
-                && p_cell.drafts.is_contain(value)
+                && p_cell.candidates.is_contain(value)
             {
                 coords.push(p_cell.coords);
             }
@@ -882,5 +651,173 @@ impl Sudoku {
     /// 检查是否都填写完毕了
     pub fn check_if_finish(&self) -> bool {
         self.collect_all_drafts_cells().is_empty()
+    }
+}
+
+#[wasm_bindgen]
+pub enum Difficulty {
+    EASY,
+    NORMAL,
+    MIDIUM,
+    HARD,
+    EXPERT,
+}
+
+#[wasm_bindgen]
+impl Sudoku {
+    // 从字符串初始化数独，要求输入字符串长度必须为81，且仅为0-9的数字
+    pub fn initial_by_string(input: String) -> Result<Sudoku, String> {
+        if input.len() != 81 {
+            return Err("Invalid String Length.".to_string());
+        }
+
+        let mut field: Sudoku = unsafe {
+            let mut field = std::mem::MaybeUninit::<Sudoku>::uninit();
+            let p_field: *mut Sudoku = field.as_mut_ptr();
+            let p_cell: *mut Cell = (*p_field).cells.as_mut_ptr();
+
+            for (index, item) in input.chars().enumerate() {
+                let tmp = item.to_digit(10).expect("Invalid Character.");
+                let rc = RCCoords::from_idx(index);
+                let gn = rc.into();
+                let coords = rc.into();
+                let status = if tmp == 0 {
+                    CellStatus::DRAFT
+                } else {
+                    CellStatus::FIXED
+                };
+                let value = if tmp == 0 {
+                    CellValue::INVAILD
+                } else {
+                    CellValue::try_from(tmp).expect("Invalid Value.")
+                };
+                std::ptr::write(
+                    p_cell.offset(index as isize),
+                    Cell {
+                        rc,
+                        gn,
+                        coords,
+                        status,
+                        candidates: Candidate::new_all_true(),
+                        value,
+                    },
+                );
+            }
+
+            field.assume_init()
+        };
+
+        field.fill_drafts();
+
+        Ok(field)
+    }
+
+    // 采用洗牌算法+随机挖空生成随机数独
+    pub fn new(difficulty: Difficulty) -> Self {
+        let max_digs = match difficulty {
+            Difficulty::EASY => 40,
+            Difficulty::NORMAL => 45,
+            Difficulty::MIDIUM => 50,
+            Difficulty::HARD => 55,
+            Difficulty::EXPERT => 60,
+            _ => 15,
+        };
+
+        let mut field = unsafe {
+            let mut field = std::mem::MaybeUninit::<Sudoku>::uninit();
+            let p_field: *mut Sudoku = field.as_mut_ptr();
+            let p_cell: *mut Cell = (*p_field).cells.as_mut_ptr();
+
+            let mut need_try_dig_cells: Vec<*mut Cell> = vec![];
+
+            for r in 0..9 {
+                for c in 0..9 {
+                    let index = r * 9 + c;
+                    let rc = RCCoords { r, c };
+                    let gn = rc.into();
+                    let coords = rc.into();
+                    let (status, value) = if (r * 3) % 9 + r / 3 == c {
+                        (CellStatus::DRAFT, CellValue::INVAILD)
+                    } else {
+                        need_try_dig_cells.push(p_cell.offset(index as isize));
+                        (
+                            CellStatus::FIXED,
+                            CellValue::try_from(((r * 3 + r / 3 + c) % 9 + 1) as u32).expect(""),
+                        )
+                    };
+                    std::ptr::write(
+                        p_cell.offset(index as isize),
+                        Cell {
+                            rc,
+                            gn,
+                            coords,
+                            status,
+                            candidates: Candidate::new_all_true(),
+                            value,
+                        },
+                    );
+                }
+            }
+
+            need_try_dig_cells.shuffle(&mut rand::thread_rng());
+
+            for p in need_try_dig_cells.into_iter().take(max_digs) {
+                let original_value = (*p).value;
+                (*p).status == CellStatus::DRAFT;
+                (*p).value == CellValue::INVAILD;
+
+                let mut solutions = vec![];
+                Self::self_solve_field(&mut newField, &mut solutions);
+                if solutions.len() != 1 {}
+            }
+
+            // let mut rng = rand::thread_rng();
+
+            // // 行交换
+            // for _ in 0..3 {
+            //     let block = rng.gen_range(0..3);
+            //     let mut rows: Vec<usize> = (block * 3..(block + 1) * 3).collect();
+            //     rows.shuffle(&mut rng);
+            //     if let [r1, r2] = rows[..2] {
+            //         puzzle.swap(r1, r2);
+            //         solution.swap(r1, r2);
+            //     }
+            // }
+
+            // // 列交换
+            // for _ in 0..3 {
+            //     let block = rng.gen_range(0..3);
+            //     let mut cols: Vec<usize> = (block * 3..(block + 1) * 3).collect();
+            //     cols.shuffle(&mut rng);
+            //     if let [c1, c2] = cols[..2] {
+            //         for row in puzzle.iter_mut() {
+            //             row.swap(c1, c2);
+            //         }
+            //         for row in solution.iter_mut() {
+            //             row.swap(c1, c2);
+            //         }
+            //     }
+            // }
+
+            // // 数字替换
+            // let mut numbers: Vec<u8> = (1..=9).collect();
+            // numbers.shuffle(&mut rng);
+            // let replace_map: Vec<u8> = (1..=9).map(|i| numbers[i as usize - 1]).collect();
+
+            // for i in 0..9 {
+            //     for j in 0..9 {
+            //         solution[i][j] = replace_map[solution[i][j] as usize - 1];
+            //         if puzzle[i][j] != 0 {
+            //             puzzle[i][j] = replace_map[puzzle[i][j] as usize - 1];
+            //         }
+            //     }
+            // }
+
+            field.assume_init()
+        };
+
+        field.fill_drafts();
+
+        field
     }
 }

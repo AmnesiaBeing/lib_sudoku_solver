@@ -1,5 +1,5 @@
 use crate::{
-    types::{Cell, CellStatus, CellValue, Coords, Drafts, Sudoku, GNCoords, RCCoords},
+    types::{Cell, CellStatus, CellValue, Coords, Candidate, Sudoku, GNCoords, RCCoords},
     utils::{
         create_simple_cell_and_value, get_coords_with_direction, get_rc_coord_with_direction,
         make_simple_conclusion_when_set_value, IterDirection,
@@ -79,7 +79,7 @@ impl InferenceSet {
                 .iter()
                 .for_each(|cv| {
                     let p = field.get_cell_mut_by_coords(cv.the_coords);
-                    cv.the_value.iter().for_each(|&v| p.drafts.remove_draft(v));
+                    cv.the_value.iter().for_each(|&v| p.candidates.remove_draft(v));
                 })
         }
     }
@@ -97,7 +97,7 @@ struct OnlyOneLeftInference;
 impl Inference for OnlyOneLeftInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.collect_all_drafts_cells().iter().find_map(|&p| {
-            p.drafts.try_get_the_only_one().map(|cv| {
+            p.candidates.get_unique_candidate().map(|cv| {
                 let condition = TheCoordsAndTheValue {
                     the_coords: p.coords,
                     the_value: vec![cv],
@@ -148,12 +148,12 @@ impl Inference for OnlyOneRightInRowInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
             vr.iter().find_map(|&p| {
-                p.drafts
+                p.candidates
                     .to_vec()
                     .iter()
                     .find(|&v| {
                         vr.iter()
-                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.drafts.is_contain(*v))
+                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.candidates.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -206,12 +206,12 @@ impl Inference for OnlyOneRightInColInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
             vc.iter().find_map(|&p| {
-                p.drafts
+                p.candidates
                     .to_vec()
                     .iter()
                     .find(|&v| {
                         vc.iter()
-                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.drafts.is_contain(*v))
+                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.candidates.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -264,12 +264,12 @@ impl Inference for OnlyOneRightInGridInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
             vg.iter().find_map(|&p| {
-                p.drafts
+                p.candidates
                     .to_vec()
                     .iter()
                     .find(|&v| {
                         vg.iter()
-                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.drafts.is_contain(*v))
+                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.candidates.is_contain(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -321,10 +321,10 @@ struct RowUniqueDraftByGridExclusionInference;
 impl Inference for RowUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::iter().find_map(|v| {
+            CellValue::values().into_iter().find_map(|v| {
                 let cells_with_value = vg
                     .iter()
-                    .filter(|&p| p.drafts.is_contain(v))
+                    .filter(|&p| p.candidates.is_contain(v))
                     .collect::<Vec<_>>();
 
                 if !cells_with_value.is_empty()
@@ -335,7 +335,7 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
                     let cells_in_same_row_but_not_in_same_grid: Vec<&Cell> = field
                         .collect_all_drafts_cells_in_r(cells_with_value[0].rc.r)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.drafts.is_contain(v))
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.is_contain(v))
                         .collect();
 
                     if !cells_in_same_row_but_not_in_same_grid.is_empty() {
@@ -406,10 +406,10 @@ struct ColUniqueDraftByGridExclusionInference;
 impl Inference for ColUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::iter().find_map(|v| {
+            CellValue::values().into_iter().find_map(|v| {
                 let cells_with_value = vg
                     .iter()
-                    .filter(|&p| p.drafts.is_contain(v))
+                    .filter(|&p| p.candidates.is_contain(v))
                     .collect::<Vec<_>>();
 
                 if !cells_with_value.is_empty()
@@ -420,7 +420,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                     let cells_in_same_col_but_not_in_same_grid: Vec<&Cell> = field
                         .collect_all_drafts_cells_in_c(cells_with_value[0].rc.c)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.drafts.is_contain(v))
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.is_contain(v))
                         .collect();
 
                     if !cells_in_same_col_but_not_in_same_grid.is_empty() {
@@ -491,9 +491,9 @@ struct GridUniqueDraftByRowExclusionInference;
 impl Inference for GridUniqueDraftByRowExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
-            CellValue::iter().find_map(|v| {
+            CellValue::values().into_iter().find_map(|v| {
                 vr.iter()
-                    .filter(|&p| p.drafts.is_contain(v))
+                    .filter(|&p| p.candidates.is_contain(v))
                     .find(|&p| {
                         let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
                         // 条件1：该行内的值都在同一个宫内
@@ -501,13 +501,13 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                         // 条件2：第一个值所在的宫，在其他行内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(v));
+                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.is_contain(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
                         let condition = vr
                             .iter()
-                            .filter(|&p_iter| p_iter.drafts.is_contain(v))
+                            .filter(|&p_iter| p_iter.candidates.is_contain(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -517,7 +517,7 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.drafts.is_contain(v))
+                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.is_contain(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -570,9 +570,9 @@ struct GridUniqueDraftByColExclusionInference;
 impl Inference for GridUniqueDraftByColExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
-            CellValue::iter().find_map(|v| {
+            CellValue::values().into_iter().find_map(|v| {
                 vc.iter()
-                    .filter(|&p| p.drafts.is_contain(v))
+                    .filter(|&p| p.candidates.is_contain(v))
                     .find(|&p| {
                         let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
                         // 条件1：该行内的值都在同一个宫内
@@ -580,13 +580,13 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                         // 条件2：第一个值所在的宫，在其他列内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(v));
+                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.is_contain(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
                         let condition = vc
                             .iter()
-                            .filter(|&p_iter| p_iter.drafts.is_contain(v))
+                            .filter(|&p_iter| p_iter.candidates.is_contain(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -596,7 +596,7 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.drafts.is_contain(v))
+                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.is_contain(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -663,10 +663,10 @@ impl Inference for RowExplicitNakedPairExclusionInference {
             }
 
             for (combo, rest) in all_combinations {
-                let union_drafts: Drafts = combo
+                let union_drafts: Candidate = combo
                     .iter()
-                    .map(|&i| vr[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vr[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
@@ -682,7 +682,7 @@ impl Inference for RowExplicitNakedPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vr[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
@@ -763,10 +763,10 @@ impl Inference for ColExplicitNakedPairExclusionInference {
             }
 
             for (combo, rest) in all_combinations {
-                let union_drafts: Drafts = combo
+                let union_drafts: Candidate = combo
                     .iter()
-                    .map(|&i| vc[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vc[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
@@ -782,7 +782,7 @@ impl Inference for ColExplicitNakedPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vc[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
@@ -863,10 +863,10 @@ impl Inference for GridExplicitNakedPairExclusionInference {
             }
 
             for (combo, rest) in all_combinations {
-                let union_drafts: Drafts = combo
+                let union_drafts: Candidate = combo
                     .iter()
-                    .map(|&i| vg[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vg[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let union_drafts_vec = union_drafts.to_vec();
                 // 检查并集的数量是否等于集合的数量
@@ -882,7 +882,7 @@ impl Inference for GridExplicitNakedPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vg[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| union_drafts_vec.contains(&val))
@@ -963,20 +963,20 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
             }
 
             for (combo, rest) in all_combinations {
-                let rest_union_drafts: Drafts = rest
+                let rest_union_drafts: Candidate = rest
                     .iter()
-                    .map(|&i| vr[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vr[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let rest_union_drafts_vec = rest_union_drafts.to_vec();
                 // 检查剩余的并集数量是否等于整个候选数-组合的数量
                 if rest_union_drafts_vec.len() == vr.len() - combo.len() {
                     let combo_union_drafts = combo
                         .iter()
-                        .map(|&i| vr[i].drafts.clone())
-                        .reduce(|a, b| a.union(b))
+                        .map(|&i| vr[i].candidates.clone())
+                        .reduce(|a, b| a.union(&b))
                         .unwrap_or_default();
-                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let hidden_pair_drafts = combo_union_drafts.subtract(&rest_union_drafts);
                     let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .map(|&i| TheCoordsAndTheValue {
@@ -988,7 +988,7 @@ impl Inference for RowExplicitHiddenPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vr[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
@@ -1070,20 +1070,20 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
             }
 
             for (combo, rest) in all_combinations {
-                let rest_union_drafts: Drafts = rest
+                let rest_union_drafts: Candidate = rest
                     .iter()
-                    .map(|&i| vc[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vc[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let rest_union_drafts_vec = rest_union_drafts.to_vec();
                 // 检查剩余的并集数量是否等于整个候选数-组合的数量
                 if rest_union_drafts_vec.len() == vc.len() - combo.len() {
                     let combo_union_drafts = combo
                         .iter()
-                        .map(|&i| vc[i].drafts.clone())
-                        .reduce(|a, b| a.union(b))
+                        .map(|&i| vc[i].candidates.clone())
+                        .reduce(|a, b| a.union(&b))
                         .unwrap_or_default();
-                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let hidden_pair_drafts = combo_union_drafts.subtract(&rest_union_drafts);
                     let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .map(|&i| TheCoordsAndTheValue {
@@ -1095,7 +1095,7 @@ impl Inference for ColExplicitHiddenPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vc[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
@@ -1180,20 +1180,20 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                 .collect::<Vec<_>>();
 
             for (combo, rest) in all_combinations {
-                let rest_union_drafts: Drafts = rest
+                let rest_union_drafts: Candidate = rest
                     .iter()
-                    .map(|&i| vg[i].drafts.clone())
-                    .reduce(|a, b| a.union(b))
+                    .map(|&i| vg[i].candidates.clone())
+                    .reduce(|a, b| a.union(&b))
                     .unwrap_or_default();
                 let rest_union_drafts_vec = rest_union_drafts.to_vec();
                 // 检查剩余的并集数量是否等于整个候选数-组合的数量
                 if rest_union_drafts_vec.len() == vg.len() - combo.len() {
                     let combo_union_drafts = combo
                         .iter()
-                        .map(|&i| vg[i].drafts.clone())
-                        .reduce(|a, b| a.union(b))
+                        .map(|&i| vg[i].candidates.clone())
+                        .reduce(|a, b| a.union(&b))
                         .unwrap_or_default();
-                    let hidden_pair_drafts = combo_union_drafts.subtract(rest_union_drafts);
+                    let hidden_pair_drafts = combo_union_drafts.subtract(&rest_union_drafts);
                     let condition: Vec<TheCoordsAndTheValue> = combo
                         .iter()
                         .map(|&i| TheCoordsAndTheValue {
@@ -1205,7 +1205,7 @@ impl Inference for GridExplicitHiddenPairExclusionInference {
                         .iter()
                         .filter_map(|&i| {
                             if vg[i]
-                                .drafts
+                                .candidates
                                 .to_vec()
                                 .iter()
                                 .any(|&val| rest_union_drafts_vec.contains(&val))
@@ -1320,7 +1320,7 @@ impl Inference for NStepFishInference {
                     for &other_index in other_indexes {
                         let rc = get_rc_coord_with_direction(one_index, other_index, direction);
                         let cell = field.get_cell_ref_by_rc(rc);
-                        if cell.status == CellStatus::DRAFT && cell.drafts.is_contain(v) {
+                        if cell.status == CellStatus::DRAFT && cell.candidates.is_contain(v) {
                             conclusion.push(create_simple_cell_and_value(rc.into(), v));
                         }
                     }
@@ -1357,7 +1357,7 @@ impl Inference for NStepFishInference {
                         other_index,
                         &direction,
                     ));
-                    if p.status == CellStatus::DRAFT && p.drafts.is_contain(v) {
+                    if p.status == CellStatus::DRAFT && p.candidates.is_contain(v) {
                         all_v_in_one_index.push(match &direction {
                             IterDirection::Row => (p.rc.r, p.rc.c),
                             IterDirection::Column => (p.rc.c, p.rc.r),
@@ -1417,7 +1417,7 @@ impl Inference for NStepFishInference {
             None
         }
 
-        CellValue::iter().find_map(|v| {
+        CellValue::values().into_iter().find_map(|v| {
             self_analyze_with_direction(self, &field, v, &IterDirection::Row).or(
                 self_analyze_with_direction(self, &field, v, &IterDirection::Column),
             )
