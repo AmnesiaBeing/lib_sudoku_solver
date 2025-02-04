@@ -1,3 +1,5 @@
+use std::{ops::DerefMut, ptr::{addr_of, addr_of_mut}};
+
 use rand::{seq::SliceRandom, Rng};
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -25,6 +27,7 @@ impl RCCoords {
 }
 
 #[derive(Copy, Clone, PartialEq)]
+#[wasm_bindgen]
 /// 兼容上述两种坐标系
 pub struct Coords {
     pub r: usize,
@@ -158,12 +161,9 @@ pub enum CellStatus {
     SOLVE,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[wasm_bindgen]
 pub struct Cell {
-    pub rc: RCCoords,
-    pub gn: GNCoords,
-    #[wasm_bindgen(skip)]
     pub coords: Coords,
     pub status: CellStatus,
     pub candidates: Candidate,
@@ -193,9 +193,22 @@ impl std::fmt::Debug for GNCoords {
     }
 }
 
+impl std::fmt::Debug for Coords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "R{}C{}G{}N{}",
+            self.r + 1,
+            self.c + 1,
+            self.g + 1,
+            self.n + 1
+        )
+    }
+}
+
 impl std::fmt::Debug for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}{:?}", self.rc, self.gn,)?;
+        write!(f, "{:?}", self.coords)?;
         match self.status {
             CellStatus::FIXED | CellStatus::SOLVE => write!(f, "{:?};", self.value),
             CellStatus::DRAFT => {
@@ -221,6 +234,10 @@ impl Sudoku {
         &self.cells[rc.r * 9 + rc.c]
     }
 
+    pub fn get_cell_mut_ptr_by_rc(&mut self, rc: RCCoords) -> *mut Cell {
+        &mut self.cells[rc.r * 9 + rc.c]
+    }
+
     pub fn get_cell_mut_by_gn(&mut self, gn: GNCoords) -> &mut Cell {
         let RCCoords { r, c } = gn.into();
         &mut self.cells[r * 9 + c]
@@ -229,6 +246,11 @@ impl Sudoku {
     pub fn get_cell_ref_by_gn(&self, gn: GNCoords) -> &Cell {
         let RCCoords { r, c } = gn.into();
         &self.cells[r * 9 + c]
+    }
+
+    pub fn get_cell_mut_ptr_by_gn(&mut self, gn: GNCoords) -> *mut Cell {
+        let RCCoords { r, c } = gn.into();
+        &mut self.cells[r * 9 + c]
     }
 
     pub fn get_cell_mut_by_coords(&mut self, coords: Coords) -> &mut Cell {
@@ -241,6 +263,11 @@ impl Sudoku {
         &self.cells[r * 9 + c]
     }
 
+    pub fn get_cell_mut_ptr_by_coords(&mut self, coords: Coords) -> *mut Cell {
+        let Coords { r, c, g: _, n: _ } = coords;
+        &mut self.cells[r * 9 + c]
+    }
+
     // 如果格子的内容有冲突，也说明有错误，可以不继续推理下去了
     pub fn find_conflict(&self) -> Option<Vec<(&Cell, &Cell)>> {
         let mut ret: Vec<(&Cell, &Cell)> = vec![];
@@ -250,8 +277,8 @@ impl Sudoku {
                 let p_cell = self.get_cell_ref_by_rc(rc);
                 if p_cell.status == CellStatus::FIXED || p_cell.status == CellStatus::SOLVE {
                     let v = p_cell.value;
-                    let g = p_cell.gn.g;
-                    let n = p_cell.gn.n;
+                    let g = p_cell.coords.g;
+                    let n = p_cell.coords.n;
                     for r_iter in (r + 1)..9 {
                         let tmp = self.get_cell_ref_by_rc(RCCoords { r: r_iter, c });
                         if (tmp.value == v)
@@ -292,10 +319,13 @@ impl Sudoku {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
                 let &Cell {
-                    status, value, gn, ..
+                    status,
+                    value,
+                    coords,
+                    ..
                 } = self.get_cell_ref_by_rc(rc);
                 if status == CellStatus::FIXED {
-                    let g = gn.g;
+                    let g = coords.g;
                     let value = value.unwrap();
                     for i in 0..9 {
                         self.get_cell_mut_by_rc(RCCoords { r: i, c })
@@ -561,7 +591,7 @@ impl Sudoku {
             }
 
             let p_cell = self.get_cell_ref_by_rc(RCCoords { r, c: i });
-            if p_cell.rc.c != c
+            if p_cell.coords.c != c
                 && p_cell.status == CellStatus::DRAFT
                 && p_cell.candidates.contains(value)
             {
@@ -569,8 +599,8 @@ impl Sudoku {
             }
 
             let p_cell = self.get_cell_ref_by_gn(GNCoords { g, n: i });
-            if p_cell.rc.r != r
-                && p_cell.rc.c != c
+            if p_cell.coords.r != r
+                && p_cell.coords.c != c
                 && p_cell.status == CellStatus::DRAFT
                 && p_cell.candidates.contains(value)
             {
@@ -597,14 +627,15 @@ pub enum Difficulty {
 }
 
 impl Difficulty {
-    // fn max_empty_cells(&self) -> usize {
-    //     match self {
-    //         Self::Easy => 40,
-    //         Self::Medium => 45,
-    //         Self::Hard => 55,
-    //         // ...
-    //     }
-    // }
+    fn empty_cells(&self) -> (usize, usize) {
+        match self {
+            Self::EASY => (35, 40),
+            Self::NORMAL => (40, 45),
+            Self::MIDIUM => (45, 50),
+            Self::HARD => (50, 55),
+            Self::EXPERT => (55, 64), // 81-17=64
+        }
+    }
 
     // fn allowed_techniques(&self) -> Vec<SolverTechnique> {
     //     match self {
@@ -630,7 +661,6 @@ impl Sudoku {
             for (index, item) in input.chars().enumerate() {
                 let tmp = item.to_digit(10).expect("Invalid Character.");
                 let rc = RCCoords::from_idx(index);
-                let gn = rc.into();
                 let coords = rc.into();
                 let status = if tmp == 0 {
                     CellStatus::DRAFT
@@ -645,8 +675,6 @@ impl Sudoku {
                 std::ptr::write(
                     p_cell.offset(index as isize),
                     Cell {
-                        rc,
-                        gn,
                         coords,
                         status,
                         candidates: Candidate::FULL,
@@ -665,53 +693,101 @@ impl Sudoku {
 
     // 采用洗牌算法+随机挖空生成随机数独
     pub fn new(difficulty: Difficulty) -> Self {
-        let max_digs = match difficulty {
-            Difficulty::EASY => 40,
-            Difficulty::NORMAL => 45,
-            Difficulty::MIDIUM => 50,
-            Difficulty::HARD => 55,
-            Difficulty::EXPERT => 60,
-            _ => 15,
-        };
-
-        let mut field = unsafe {
-            let mut field = std::mem::MaybeUninit::<Sudoku>::uninit();
-            let p_field: *mut Sudoku = field.as_mut_ptr();
-            let p_cell: *mut Cell = (*p_field).cells.as_mut_ptr();
-
-            let mut need_try_dig_cells: Vec<*mut Cell> = vec![];
-
+        fn create_base() -> Sudoku {
+            let mut cells = [Cell {
+                coords: Coords {
+                    r: 0,
+                    c: 0,
+                    g: 0,
+                    n: 0,
+                },
+                status: CellStatus::FIXED,
+                candidates: Candidate::default(),
+                value: None,
+            }; 81];
             for r in 0..9 {
                 for c in 0..9 {
                     let index = r * 9 + c;
                     let rc = RCCoords { r, c };
-                    let gn = rc.into();
-                    let coords = rc.into();
-                    let mut candidates = Candidate::default();
-                    let status: CellStatus;
-                    let mut value: Option<u8> = Some(((r * 3 + r / 3 + c) % 9 + 1) as u8);
+                    let value: Option<u8> = Some(((r * 3 + r / 3 + c) % 9 + 1) as u8);
+                    cells[index].coords = rc.into();
                     if (r * 3) % 9 + r / 3 == c {
-                        candidates.add(value.unwrap());
-                        status = CellStatus::DRAFT;
-                        value = None;
+                        cells[index].candidates.add(value.unwrap());
+                        cells[index].status = CellStatus::DRAFT;
+                        // cells[index].value = None;
                     } else {
-                        need_try_dig_cells.push(p_cell.offset(index as isize));
-                        status = CellStatus::FIXED;
+                        // cells[index].candidates No Need To Add;
+                        cells[index].status = CellStatus::FIXED;
+                        cells[index].value = value;
                     };
-                    std::ptr::write(
-                        p_cell.offset(index as isize),
-                        Cell {
-                            rc,
-                            gn,
-                            coords,
-                            status,
-                            candidates,
-                            value,
-                        },
-                    );
                 }
             }
+            Sudoku { cells }
+        }
 
+        unsafe fn dig_holes(sudoku: &mut Sudoku, max_digs: usize) {
+            // sudoku.deref_mut()
+            let mut candidate_cells: Vec<&mut Cell> = (*(sudoku.deref_mut()))
+                .cells
+                .iter_mut()
+                .filter(|c| c.status == CellStatus::FIXED)
+                .collect();
+
+            candidate_cells.shuffle(&mut rand::thread_rng());
+
+            for cell in candidate_cells.into_iter().take(max_digs) {
+                let original = (*cell).value.take().unwrap();
+                (*cell).status = CellStatus::DRAFT;
+
+                // 更新相关候选数
+                update_peers_candidates(sudoku, (*cell).coords, original);
+            }
+        }
+
+        fn update_peers_candidates(sudoku: &mut Sudoku, mid_cell_coords: Coords, value: u8) {
+            for i in 0..9 {
+                // 更新行候选
+                maybe_add_candidate(sudoku, mid_cell_coords.r, i, value);
+                // 更新列候选
+                maybe_add_candidate(sudoku, i, mid_cell_coords.c, value);
+            }
+            let (gltr, gltc) = (mid_cell_coords.g / 3, mid_cell_coords.g % 3);
+            for i in 0..2 {
+                for j in 0..2 {
+                    // 更新宫候选
+                    maybe_add_candidate(sudoku, gltr + i, gltc + j, value);
+                }
+            }
+        }
+
+        unsafe fn maybe_add_candidate(sudoku: *mut Sudoku, cell: *mut Cell, value: u8) {
+            if (*cell).status == CellStatus::DRAFT && conflict_exists(sudoku, (*cell).coords, value)
+            {
+                (*cell).candidates.add(value);
+            }
+        }
+
+        unsafe fn conflict_exists(sudoku: *mut Sudoku, coords: Coords, value: u8) -> bool {
+            let mut ret = false;
+            for i in 0..9 {
+                // 更新行候选
+                maybe_add_candidate(sudoku, mid_cell_coords.r, i, value);
+                // 更新列候选
+                maybe_add_candidate(sudoku, i, mid_cell_coords.c, value);
+            }
+            let (gltr, gltc) = (mid_cell_coords.g / 3, mid_cell_coords.g % 3);
+            for i in 0..2 {
+                for j in 0..2 {
+                    // 更新宫候选
+                    maybe_add_candidate(sudoku, gltr + i, gltc + j, value);
+                }
+            }
+            ret
+        }
+
+        let sudoku = create_base();
+
+        let mut field = unsafe {
             need_try_dig_cells.shuffle(&mut rand::thread_rng());
 
             for p in need_try_dig_cells.into_iter().take(max_digs) {
@@ -797,14 +873,18 @@ impl Sudoku {
                         for c in 0..9 {
                             let r = (*p1).rc.r;
                             let p2 = p_cell.offset((r * 9 + c) as isize);
-                            if (*p2).status == CellStatus::FIXED && (*p2).value == Some(original_value) {
+                            if (*p2).status == CellStatus::FIXED
+                                && (*p2).value == Some(original_value)
+                            {
                                 flag = false;
                             }
                         }
                         for r in 0..9 {
                             let c = (*p1).rc.c;
                             let p2 = p_cell.offset((r * 9 + c) as isize);
-                            if (*p2).status == CellStatus::FIXED && (*p2).value == Some(original_value) {
+                            if (*p2).status == CellStatus::FIXED
+                                && (*p2).value == Some(original_value)
+                            {
                                 flag = false;
                             }
                         }
@@ -865,10 +945,10 @@ impl Sudoku {
         field
 
         // let mut sudoku = Sudoku::create_base();
-        
+
         // // 第一阶段：基础挖空
         // sudoku.dig_holes(27);  // 固定挖空27格
-        
+
         // // 第二阶段：难度相关挖空
         // let extra_digs = match difficulty {
         //     Difficulty::Easy => 13,
