@@ -85,26 +85,13 @@ impl From<RCCoords> for GNCoords {
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
 #[wasm_bindgen]
-pub struct Candidate {
-    // 以位的方式存储候选数，低9位有效
-    pub bitmask: u32,
-}
+pub struct Candidate(u16);
 
 impl Candidate {
-    pub fn new_all_false() -> Candidate {
-        Candidate { bitmask: 0x000 }
-    }
+    pub const FULL: Candidate = Candidate(0x1FF);
 
-    pub fn new_all_true() -> Candidate {
-        Candidate { bitmask: 0x1FF }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.bitmask == 0x000
-    }
-
-    pub fn get_unique_candidate(&self) -> Option<CellValue> {
-        const fn bit_to_num() -> [u32; 9] {
+    pub fn get_unique_candidate(&self) -> Option<u8> {
+        const fn bit_to_num() -> [u16; 9] {
             let mut result = [0; 9];
             let mut i = 0;
             while i < 9 {
@@ -113,58 +100,47 @@ impl Candidate {
             }
             result
         }
-        const BIT_TO_NUM: [u32; 9] = bit_to_num();
+        const BIT_TO_NUM: [u16; 9] = bit_to_num();
 
-        CellValue::try_from((BIT_TO_NUM.iter().position(|p| *p == self.bitmask)?) as u32 + 1).ok()
+        BIT_TO_NUM
+            .iter()
+            .position(|p| *p == self.0)
+            .map(|r| r as u8)
     }
 
-    pub fn add_draft(&mut self, v: CellValue) {
-        if v != CellValue::INVAILD {
-            self.bitmask &= 0x001 << (v as u32 - 1);
-        }
+    pub fn add(&mut self, v: u8) {
+        self.0 &= 0x001 << v as u16;
     }
 
-    pub fn remove_draft(&mut self, v: CellValue) {
-        if v != CellValue::INVAILD {
-            self.bitmask &= !(0x001 << (v as u32 - 1));
-        }
+    pub fn remove(&mut self, v: u8) {
+        self.0 &= !(0x001 << v as u16);
     }
 
-    pub fn is_contain(&self, v: CellValue) -> bool {
-        v != CellValue::INVAILD && (self.bitmask & (0x001 << (v as u32 - 1))) != 0
+    pub fn contains(&self, v: u8) -> bool {
+        self.0 & (0x001 << v as u16) != 0
     }
-
-    // pub fn delta_to(&self, other: Candidate) -> u32 {
-    //     self.bitmask ^ other.bitmask
-    // }
 
     pub fn len(&self) -> u32 {
-        self.bitmask.count_ones()
+        self.0.count_ones()
     }
 
     pub fn union(&self, other: &Candidate) -> Candidate {
-        Candidate {
-            bitmask: self.bitmask | other.bitmask,
-        }
+        Candidate(self.0 | other.0)
     }
 
     pub fn intersect(&self, other: &Candidate) -> Candidate {
-        Candidate {
-            bitmask: self.bitmask & other.bitmask,
-        }
+        Candidate(self.0 & other.0)
     }
 
     pub fn subtract(&self, other: &Candidate) -> Candidate {
-        Candidate {
-            bitmask: self.bitmask & !other.bitmask,
-        }
+        Candidate(self.0 & !other.0)
     }
 
-    pub fn to_vec(&self) -> Vec<CellValue> {
+    pub fn to_vec(&self) -> Vec<u8> {
         let mut values = Vec::new();
         for i in 0..9 {
-            if self.bitmask & (0x001 << i) != 0 {
-                values.push(CellValue::try_from((i + 1) as u32).unwrap());
+            if self.0 & (0x001 << i) != 0 {
+                values.push(i);
             }
         }
         values
@@ -182,57 +158,6 @@ pub enum CellStatus {
     SOLVE,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[wasm_bindgen]
-pub enum CellValue {
-    INVAILD = 0,
-    V1 = 1,
-    V2 = 2,
-    V3 = 3,
-    V4 = 4,
-    V5 = 5,
-    V6 = 6,
-    V7 = 7,
-    V8 = 8,
-    V9 = 9,
-}
-
-impl TryFrom<u32> for CellValue {
-    type Error = &'static str;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(CellValue::INVAILD),
-            1 => Ok(CellValue::V1),
-            2 => Ok(CellValue::V2),
-            3 => Ok(CellValue::V3),
-            4 => Ok(CellValue::V4),
-            5 => Ok(CellValue::V5),
-            6 => Ok(CellValue::V6),
-            7 => Ok(CellValue::V7),
-            8 => Ok(CellValue::V8),
-            9 => Ok(CellValue::V9),
-            _ => Err("Invalid Cell Value."),
-        }
-    }
-}
-
-impl CellValue {
-    pub const fn values() -> [Self; 9] {
-        [
-            CellValue::V1,
-            CellValue::V2,
-            CellValue::V3,
-            CellValue::V4,
-            CellValue::V5,
-            CellValue::V6,
-            CellValue::V7,
-            CellValue::V8,
-            CellValue::V9,
-        ]
-    }
-}
-
 #[derive(Clone)]
 #[wasm_bindgen]
 pub struct Cell {
@@ -242,13 +167,13 @@ pub struct Cell {
     pub coords: Coords,
     pub status: CellStatus,
     pub candidates: Candidate,
-    pub value: CellValue,
+    pub value: Option<u8>, // None 0-9
 }
 
 impl std::fmt::Debug for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..9 {
-            if self.bitmask & (0x001 << i) != 0 {
+            if self.0 & (0x001 << i) != 0 {
                 write!(f, "{}", i + 1)?;
             }
         }
@@ -367,24 +292,21 @@ impl Sudoku {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
                 let &Cell {
-                    status,
-                    coords: _,
-                    value,
-                    rc: _,
-                    gn,
-                    candidates: _,
+                    status, value, gn, ..
                 } = self.get_cell_ref_by_rc(rc);
                 if status == CellStatus::FIXED {
+                    let g = gn.g;
+                    let value = value.unwrap();
                     for i in 0..9 {
-                        let p_cell = self.get_cell_mut_by_rc(RCCoords { r: i, c });
-                        p_cell.candidates.remove_draft(value);
-
-                        let p_cell = self.get_cell_mut_by_rc(RCCoords { r, c: i });
-                        p_cell.candidates.remove_draft(value);
-
-                        let g = gn.g;
-                        let p_cell = self.get_cell_mut_by_gn(GNCoords { g, n: i });
-                        p_cell.candidates.remove_draft(value);
+                        self.get_cell_mut_by_rc(RCCoords { r: i, c })
+                            .candidates
+                            .remove(value);
+                        self.get_cell_mut_by_rc(RCCoords { r, c: i })
+                            .candidates
+                            .remove(value);
+                        self.get_cell_mut_by_gn(GNCoords { g, n: i })
+                            .candidates
+                            .remove(value);
                     }
                 }
             }
@@ -401,7 +323,7 @@ impl Sudoku {
         fn format_draft(p: &Cell, m: usize) -> String {
             (0..3)
                 .map(|n| {
-                    if p.candidates.bitmask & (0x001 << m * 3 + n) != 0 {
+                    if p.candidates.0 & (0x001 << m * 3 + n) != 0 {
                         (m * 3 + n + 1).to_string()
                     } else {
                         " ".to_string()
@@ -413,7 +335,7 @@ impl Sudoku {
         fn format_fixed(p: &Cell, m: usize) -> String {
             match m {
                 0 => "\\ /".to_string(),
-                1 => format!(" {} ", p.value as u32),
+                1 => format!(" {} ", p.value.unwrap() + 1),
                 _ => "/ \\".to_string(),
             }
         }
@@ -421,7 +343,7 @@ impl Sudoku {
         fn format_solve(p: &Cell, m: usize) -> String {
             match m {
                 0 => "***".to_string(),
-                1 => format!("*{}*", p.value as u32),
+                1 => format!("*{}*", p.value.unwrap() + 1),
                 _ => "***".to_string(),
             }
         }
@@ -453,8 +375,19 @@ impl Sudoku {
         }
     }
 
+    // TODO: Backtrace Solve
+    // fn is_unique(&self) -> bool {
+    //     let mut solution_count = 0;
+    //     let mut solver = self.clone();
+    //     solver.backtrack_solve(&mut solution_count);
+    //     solution_count == 1
+    // }
+
+    // fn backtrack_solve(&mut self, count: &mut u32) -> bool {
+    //     // 实现带计数器的回溯算法...
+    // }
     fn self_solve_field(field: &mut Sudoku, solutions: &mut Vec<Sudoku>) -> bool {
-        fn is_valid(r: usize, c: usize, v: CellValue, field: &Sudoku) -> bool {
+        fn is_valid(r: usize, c: usize, v: Option<u8>, field: &Sudoku) -> bool {
             let GNCoords { g, n: _ } = RCCoords { r, c }.into();
             for i in 0..9 {
                 if field.get_cell_ref_by_rc(RCCoords { r, c: i }).value == v {
@@ -477,8 +410,8 @@ impl Sudoku {
                     let cell: *mut Cell = core::ptr::addr_of_mut!(field.cells[idx]);
                     if (*cell).status == CellStatus::DRAFT {
                         for &num in &(*cell).candidates.to_vec() {
-                            if is_valid(r, c, num, &field) {
-                                (*cell).value = num;
+                            if is_valid(r, c, Some(num), &field) {
+                                (*cell).value = Some(num);
                                 (*cell).status = CellStatus::SOLVE;
 
                                 if Self::self_solve_field(field, solutions) {
@@ -490,7 +423,7 @@ impl Sudoku {
 
                                 // 回溯
                                 (*cell).status = CellStatus::DRAFT;
-                                (*cell).value = CellValue::INVAILD; // 重置值
+                                (*cell).value = None; // 重置值
                             }
                         }
                         return false; // 如果没有找到有效的数字，则返回false
@@ -594,9 +527,9 @@ impl Sudoku {
     }
 
     /// 按行遍历包含指定V的草稿单元格
-    pub fn iter_all_drafts_cells_by_rc_contain_v(
+    pub fn iter_all_drafts_cells_by_rc_contains_v(
         &self,
-        v: CellValue,
+        v: u8,
     ) -> <Vec<Vec<&Cell>> as IntoIterator>::IntoIter {
         (0..9)
             .into_iter()
@@ -604,7 +537,7 @@ impl Sudoku {
                 (0..9)
                     .into_iter()
                     .map(|c| self.get_cell_ref_by_rc(RCCoords { r, c }))
-                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).candidates.is_contain(v))
+                    .filter(|&p| (*p).status == CellStatus::DRAFT && (*p).candidates.contains(v))
                     .collect()
             })
             .collect::<Vec<Vec<&Cell>>>()
@@ -615,7 +548,7 @@ impl Sudoku {
     pub fn collect_all_drafts_coords_by_coords_and_value(
         &self,
         coords: Coords,
-        value: CellValue,
+        value: u8,
     ) -> Vec<Coords> {
         let Coords { r, c, g, n: _ } = coords;
 
@@ -623,14 +556,14 @@ impl Sudoku {
 
         for i in 0..9 {
             let p_cell = self.get_cell_ref_by_rc(RCCoords { r: i, c });
-            if p_cell.status == CellStatus::DRAFT && p_cell.candidates.is_contain(value) {
+            if p_cell.status == CellStatus::DRAFT && p_cell.candidates.contains(value) {
                 coords.push(p_cell.coords);
             }
 
             let p_cell = self.get_cell_ref_by_rc(RCCoords { r, c: i });
             if p_cell.rc.c != c
                 && p_cell.status == CellStatus::DRAFT
-                && p_cell.candidates.is_contain(value)
+                && p_cell.candidates.contains(value)
             {
                 coords.push(p_cell.coords);
             }
@@ -639,7 +572,7 @@ impl Sudoku {
             if p_cell.rc.r != r
                 && p_cell.rc.c != c
                 && p_cell.status == CellStatus::DRAFT
-                && p_cell.candidates.is_contain(value)
+                && p_cell.candidates.contains(value)
             {
                 coords.push(p_cell.coords);
             }
@@ -663,7 +596,25 @@ pub enum Difficulty {
     EXPERT,
 }
 
-#[wasm_bindgen]
+impl Difficulty {
+    // fn max_empty_cells(&self) -> usize {
+    //     match self {
+    //         Self::Easy => 40,
+    //         Self::Medium => 45,
+    //         Self::Hard => 55,
+    //         // ...
+    //     }
+    // }
+
+    // fn allowed_techniques(&self) -> Vec<SolverTechnique> {
+    //     match self {
+    //         Self::Easy => vec![BASIC_SINGLES],
+    //         // ...
+    //     }
+    // }
+}
+
+// #[wasm_bindgen]
 impl Sudoku {
     // 从字符串初始化数独，要求输入字符串长度必须为81，且仅为0-9的数字
     pub fn initial_by_string(input: String) -> Result<Sudoku, String> {
@@ -687,9 +638,9 @@ impl Sudoku {
                     CellStatus::FIXED
                 };
                 let value = if tmp == 0 {
-                    CellValue::INVAILD
+                    None
                 } else {
-                    CellValue::try_from(tmp).expect("Invalid Value.")
+                    Some((tmp - 1) as u8)
                 };
                 std::ptr::write(
                     p_cell.offset(index as isize),
@@ -698,7 +649,7 @@ impl Sudoku {
                         gn,
                         coords,
                         status,
-                        candidates: Candidate::new_all_true(),
+                        candidates: Candidate::FULL,
                         value,
                     },
                 );
@@ -736,14 +687,16 @@ impl Sudoku {
                     let rc = RCCoords { r, c };
                     let gn = rc.into();
                     let coords = rc.into();
-                    let (status, value) = if (r * 3) % 9 + r / 3 == c {
-                        (CellStatus::DRAFT, CellValue::INVAILD)
+                    let mut candidates = Candidate::default();
+                    let status: CellStatus;
+                    let mut value: Option<u8> = Some(((r * 3 + r / 3 + c) % 9 + 1) as u8);
+                    if (r * 3) % 9 + r / 3 == c {
+                        candidates.add(value.unwrap());
+                        status = CellStatus::DRAFT;
+                        value = None;
                     } else {
                         need_try_dig_cells.push(p_cell.offset(index as isize));
-                        (
-                            CellStatus::FIXED,
-                            CellValue::try_from(((r * 3 + r / 3 + c) % 9 + 1) as u32).expect(""),
-                        )
+                        status = CellStatus::FIXED;
                     };
                     std::ptr::write(
                         p_cell.offset(index as isize),
@@ -752,7 +705,7 @@ impl Sudoku {
                             gn,
                             coords,
                             status,
-                            candidates: Candidate::new_all_true(),
+                            candidates,
                             value,
                         },
                     );
@@ -762,13 +715,104 @@ impl Sudoku {
             need_try_dig_cells.shuffle(&mut rand::thread_rng());
 
             for p in need_try_dig_cells.into_iter().take(max_digs) {
-                let original_value = (*p).value;
-                (*p).status == CellStatus::DRAFT;
-                (*p).value == CellValue::INVAILD;
+                let original_value = (*p).value.unwrap();
+                (*p).status = CellStatus::DRAFT;
+                (*p).value = None;
 
-                let mut solutions = vec![];
-                Self::self_solve_field(&mut newField, &mut solutions);
-                if solutions.len() != 1 {}
+                // 对于p所在的行中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+                for c in 0..9 {
+                    let p1 = p_cell.offset(((*p).rc.r * 9 + c) as isize);
+                    if (*p1).status == CellStatus::DRAFT {
+                        let mut flag = true;
+                        for r in 0..9 {
+                            if r != (*p).rc.r {
+                                let p2 = p_cell.offset((r * 9 + c) as isize);
+                                if (*p2).status == CellStatus::FIXED
+                                    && (*p2).value == Some(original_value)
+                                {
+                                    flag = false;
+                                }
+                            }
+                        }
+                        for n in 0..9 {
+                            if n != (*p).gn.n {
+                                let g = (*p1).gn.g;
+                                let p3 = p_cell.offset(
+                                    ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
+                                );
+                                if (*p3).status == CellStatus::FIXED
+                                    && (*p3).value == Some(original_value)
+                                {
+                                    flag = false;
+                                }
+                            }
+                        }
+                        if flag {
+                            (*p1).candidates.add(original_value);
+                        }
+                    }
+                }
+
+                // 对于p所在的列中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+                for r in 0..9 {
+                    let p1 = p_cell.offset((r * 9 + (*p).rc.c) as isize);
+                    if (*p1).status == CellStatus::DRAFT {
+                        let mut flag = true;
+                        for c in 0..9 {
+                            if c != (*p).rc.c {
+                                let p2 = p_cell.offset((r * 9 + c) as isize);
+                                if (*p2).status == CellStatus::FIXED
+                                    && (*p2).value == Some(original_value)
+                                {
+                                    flag = false;
+                                }
+                            }
+                        }
+                        for n in 0..9 {
+                            if n != (*p).gn.n {
+                                let g = (*p1).gn.g;
+                                let p3 = p_cell.offset(
+                                    ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
+                                );
+                                if (*p3).status == CellStatus::FIXED
+                                    && (*p3).value == Some(original_value)
+                                {
+                                    flag = false;
+                                }
+                            }
+                        }
+                        if flag {
+                            (*p1).candidates.add(original_value);
+                        }
+                    }
+                }
+
+                // 对于p所在的宫中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+                for n in 0..9 {
+                    let g = (*p).gn.g;
+                    let p1 =
+                        p_cell.offset(((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize);
+                    if (*p1).status == CellStatus::DRAFT && (*p).gn.n != (*p1).gn.n {
+                        let mut flag = true;
+                        for c in 0..9 {
+                            let r = (*p1).rc.r;
+                            let p2 = p_cell.offset((r * 9 + c) as isize);
+                            if (*p2).status == CellStatus::FIXED && (*p2).value == Some(original_value) {
+                                flag = false;
+                            }
+                        }
+                        for r in 0..9 {
+                            let c = (*p1).rc.c;
+                            let p2 = p_cell.offset((r * 9 + c) as isize);
+                            if (*p2).status == CellStatus::FIXED && (*p2).value == Some(original_value) {
+                                flag = false;
+                            }
+                        }
+                        if flag {
+                            (*p1).candidates.add(original_value);
+                        }
+                    }
+                }
             }
 
             // let mut rng = rand::thread_rng();
@@ -819,5 +863,25 @@ impl Sudoku {
         field.fill_drafts();
 
         field
+
+        // let mut sudoku = Sudoku::create_base();
+        
+        // // 第一阶段：基础挖空
+        // sudoku.dig_holes(27);  // 固定挖空27格
+        
+        // // 第二阶段：难度相关挖空
+        // let extra_digs = match difficulty {
+        //     Difficulty::Easy => 13,
+        //     Difficulty::Medium => 18,
+        //     Difficulty::Hard => 23,
+        //     // ...
+        // };
+        // sudoku.dig_holes(extra_digs);
+
+        // // 随机变换
+        // sudoku.shuffle_rows_columns();
+        // sudoku.remap_numbers();
+
+        // sudoku
     }
 }

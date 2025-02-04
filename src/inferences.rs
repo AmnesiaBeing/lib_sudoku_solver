@@ -1,5 +1,5 @@
 use crate::{
-    types::{Cell, CellStatus, CellValue, Coords, Candidate, Sudoku, GNCoords, RCCoords},
+    types::{Candidate, Cell, CellStatus, Coords, GNCoords, RCCoords, Sudoku},
     utils::{
         create_simple_cell_and_value, get_coords_with_direction, get_rc_coord_with_direction,
         make_simple_conclusion_when_set_value, IterDirection,
@@ -11,7 +11,7 @@ use crate::{
 #[derive(Clone)]
 pub struct TheCoordsAndTheValue {
     pub the_coords: Coords,
-    pub the_value: Vec<CellValue>,
+    pub the_value: Vec<u8>,
 }
 
 // impl std::fmt::Debug for TheCoordsAndTheValue {
@@ -68,7 +68,7 @@ impl InferenceSet {
         if result.conclusion_set_value.is_some() {
             result.conclusion_set_value.unwrap().iter().for_each(|cv| {
                 let p = field.get_cell_mut_by_coords(cv.the_coords);
-                p.value = cv.the_value[0];
+                p.value = Some(cv.the_value[0]);
                 p.status = CellStatus::SOLVE;
             })
         };
@@ -79,7 +79,7 @@ impl InferenceSet {
                 .iter()
                 .for_each(|cv| {
                     let p = field.get_cell_mut_by_coords(cv.the_coords);
-                    cv.the_value.iter().for_each(|&v| p.candidates.remove_draft(v));
+                    cv.the_value.iter().for_each(|&v| p.candidates.remove(v));
                 })
         }
     }
@@ -153,7 +153,7 @@ impl Inference for OnlyOneRightInRowInference {
                     .iter()
                     .find(|&v| {
                         vr.iter()
-                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.candidates.is_contain(*v))
+                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -211,7 +211,7 @@ impl Inference for OnlyOneRightInColInference {
                     .iter()
                     .find(|&v| {
                         vc.iter()
-                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.candidates.is_contain(*v))
+                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -269,7 +269,7 @@ impl Inference for OnlyOneRightInGridInference {
                     .iter()
                     .find(|&v| {
                         vg.iter()
-                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.candidates.is_contain(*v))
+                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -321,10 +321,10 @@ struct RowUniqueDraftByGridExclusionInference;
 impl Inference for RowUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::values().into_iter().find_map(|v| {
+            (0..9).into_iter().find_map(|v| {
                 let cells_with_value = vg
                     .iter()
-                    .filter(|&p| p.candidates.is_contain(v))
+                    .filter(|&p| p.candidates.contains(v))
                     .collect::<Vec<_>>();
 
                 if !cells_with_value.is_empty()
@@ -335,7 +335,7 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
                     let cells_in_same_row_but_not_in_same_grid: Vec<&Cell> = field
                         .collect_all_drafts_cells_in_r(cells_with_value[0].rc.r)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.is_contain(v))
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.contains(v))
                         .collect();
 
                     if !cells_in_same_row_but_not_in_same_grid.is_empty() {
@@ -406,10 +406,10 @@ struct ColUniqueDraftByGridExclusionInference;
 impl Inference for ColUniqueDraftByGridExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_gn().find_map(|vg| {
-            CellValue::values().into_iter().find_map(|v| {
+            (0..0).into_iter().find_map(|v| {
                 let cells_with_value = vg
                     .iter()
-                    .filter(|&p| p.candidates.is_contain(v))
+                    .filter(|&p| p.candidates.contains(v))
                     .collect::<Vec<_>>();
 
                 if !cells_with_value.is_empty()
@@ -420,7 +420,7 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                     let cells_in_same_col_but_not_in_same_grid: Vec<&Cell> = field
                         .collect_all_drafts_cells_in_c(cells_with_value[0].rc.c)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.is_contain(v))
+                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.contains(v))
                         .collect();
 
                     if !cells_in_same_col_but_not_in_same_grid.is_empty() {
@@ -491,9 +491,9 @@ struct GridUniqueDraftByRowExclusionInference;
 impl Inference for GridUniqueDraftByRowExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_rc().find_map(|vr| {
-            CellValue::values().into_iter().find_map(|v| {
+            (0..9).into_iter().find_map(|v| {
                 vr.iter()
-                    .filter(|&p| p.candidates.is_contain(v))
+                    .filter(|&p| p.candidates.contains(v))
                     .find(|&p| {
                         let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
                         // 条件1：该行内的值都在同一个宫内
@@ -501,13 +501,13 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                         // 条件2：第一个值所在的宫，在其他行内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.is_contain(v));
+                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.contains(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
                         let condition = vr
                             .iter()
-                            .filter(|&p_iter| p_iter.candidates.is_contain(v))
+                            .filter(|&p_iter| p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -517,7 +517,7 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.is_contain(v))
+                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -570,9 +570,9 @@ struct GridUniqueDraftByColExclusionInference;
 impl Inference for GridUniqueDraftByColExclusionInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         field.iter_all_drafts_cells_by_cr().find_map(|vc| {
-            CellValue::values().into_iter().find_map(|v| {
+            (0..9).into_iter().find_map(|v| {
                 vc.iter()
-                    .filter(|&p| p.candidates.is_contain(v))
+                    .filter(|&p| p.candidates.contains(v))
                     .find(|&p| {
                         let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
                         // 条件1：该行内的值都在同一个宫内
@@ -580,13 +580,13 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                         // 条件2：第一个值所在的宫，在其他列内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.is_contain(v));
+                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.contains(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
                         let condition = vc
                             .iter()
-                            .filter(|&p_iter| p_iter.candidates.is_contain(v))
+                            .filter(|&p_iter| p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -596,7 +596,7 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                         let conclusion = field
                             .collect_all_drafts_cells_in_g(p.gn.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.is_contain(v))
+                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -1274,7 +1274,7 @@ impl Inference for NStepFishInference {
     fn analyze<'a>(&'a self, field: &'a Sudoku) -> Option<InferenceResult<'a>> {
         // 构造返回条件
         fn create_condition(
-            v: CellValue,
+            v: u8,
             direction: &IterDirection,
             one_indexes: &[usize],   // 阶数个usize的数组
             other_indexes: &[usize], // 阶数个usize的数组
@@ -1302,7 +1302,7 @@ impl Inference for NStepFishInference {
         // 构造返回结论
         fn create_conclusion<'a>(
             field: &'a Sudoku,
-            v: CellValue,
+            v: u8,
             direction: &'a IterDirection,
             one_indexes: &[usize],   // 阶数个usize的数组
             other_indexes: &[usize], // 阶数个usize的数组
@@ -1320,7 +1320,7 @@ impl Inference for NStepFishInference {
                     for &other_index in other_indexes {
                         let rc = get_rc_coord_with_direction(one_index, other_index, direction);
                         let cell = field.get_cell_ref_by_rc(rc);
-                        if cell.status == CellStatus::DRAFT && cell.candidates.is_contain(v) {
+                        if cell.status == CellStatus::DRAFT && cell.candidates.contains(v) {
                             conclusion.push(create_simple_cell_and_value(rc.into(), v));
                         }
                     }
@@ -1344,7 +1344,7 @@ impl Inference for NStepFishInference {
         fn self_analyze_with_direction<'a>(
             inference: &'a dyn Inference,
             field: &'a Sudoku,
-            v: CellValue,
+            v: u8,
             direction: &'a IterDirection,
         ) -> Option<InferenceResult<'a>> {
             let mut all_v_in_field: Vec<Vec<(usize, usize)>> = Vec::new();
@@ -1357,7 +1357,7 @@ impl Inference for NStepFishInference {
                         other_index,
                         &direction,
                     ));
-                    if p.status == CellStatus::DRAFT && p.candidates.is_contain(v) {
+                    if p.status == CellStatus::DRAFT && p.candidates.contains(v) {
                         all_v_in_one_index.push(match &direction {
                             IterDirection::Row => (p.rc.r, p.rc.c),
                             IterDirection::Column => (p.rc.c, p.rc.r),
@@ -1417,7 +1417,7 @@ impl Inference for NStepFishInference {
             None
         }
 
-        CellValue::values().into_iter().find_map(|v| {
+        (0..9).into_iter().find_map(|v| {
             self_analyze_with_direction(self, &field, v, &IterDirection::Row).or(
                 self_analyze_with_direction(self, &field, v, &IterDirection::Column),
             )
@@ -1479,7 +1479,7 @@ impl Inference for ExploitInference {
                         if p1.status != p2.status {
                             conclusion.push(TheCoordsAndTheValue {
                                 the_coords: p2.coords,
-                                the_value: vec![p1.value],
+                                the_value: vec![p1.value.unwrap()],
                             });
                         }
                     }

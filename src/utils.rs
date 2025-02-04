@@ -2,7 +2,7 @@
 
 use crate::{
     inferences::TheCoordsAndTheValue,
-    types::{Cell, CellValue, Coords, Sudoku, GNCoords, RCCoords},
+    types::{Cell, Coords, GNCoords, RCCoords, Sudoku},
 };
 
 // 定义子函数，将一个集合拆分成X和剩余部分的两个集合，且 2<=X<=4
@@ -34,7 +34,7 @@ pub fn generate_combinations(
 pub fn make_simple_conclusion_when_set_value<'a>(
     field: &'a Sudoku,
     coords: &'a Coords,
-    value: CellValue,
+    value: u8,
 ) -> Option<Vec<TheCoordsAndTheValue>> {
     let ret: Vec<TheCoordsAndTheValue> = field
         .collect_all_drafts_coords_by_coords_and_value(*coords, value)
@@ -49,7 +49,7 @@ pub fn make_simple_conclusion_when_set_value<'a>(
     }
 }
 
-pub fn create_simple_cell_and_value<'a>(coords: Coords, v: CellValue) -> TheCoordsAndTheValue {
+pub fn create_simple_cell_and_value<'a>(coords: Coords, v: u8) -> TheCoordsAndTheValue {
     TheCoordsAndTheValue {
         the_coords: coords,
         the_value: vec![v],
