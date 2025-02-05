@@ -153,7 +153,7 @@ impl Inference for OnlyOneRightInRowInference {
                     .iter()
                     .find(|&v| {
                         vr.iter()
-                            .all(|p_iter| p_iter.rc.c == p.rc.c || !p_iter.candidates.contains(*v))
+                            .all(|p_iter| p_iter.coords.c == p.coords.c || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -211,7 +211,7 @@ impl Inference for OnlyOneRightInColInference {
                     .iter()
                     .find(|&v| {
                         vc.iter()
-                            .all(|p_iter| p_iter.rc.r == p.rc.r || !p_iter.candidates.contains(*v))
+                            .all(|p_iter| p_iter.coords.r == p.coords.r || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -269,7 +269,7 @@ impl Inference for OnlyOneRightInGridInference {
                     .iter()
                     .find(|&v| {
                         vg.iter()
-                            .all(|p_iter| p_iter.gn.n == p.gn.n || !p_iter.candidates.contains(*v))
+                            .all(|p_iter| p_iter.coords.n == p.coords.n || !p_iter.candidates.contains(*v))
                     })
                     .and_then(|&ret| {
                         let cv = TheCoordsAndTheValue {
@@ -330,12 +330,12 @@ impl Inference for RowUniqueDraftByGridExclusionInference {
                 if !cells_with_value.is_empty()
                     && cells_with_value
                         .iter()
-                        .all(|&p| p.rc.r == cells_with_value[0].rc.r)
+                        .all(|&p| p.coords.r == cells_with_value[0].coords.r)
                 {
                     let cells_in_same_row_but_not_in_same_grid: Vec<&Cell> = field
-                        .collect_all_drafts_cells_in_r(cells_with_value[0].rc.r)
+                        .collect_all_drafts_cells_in_r(cells_with_value[0].coords.r)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.contains(v))
+                        .filter(|&p| p.coords.g != cells_with_value[0].coords.g && p.candidates.contains(v))
                         .collect();
 
                     if !cells_in_same_row_but_not_in_same_grid.is_empty() {
@@ -415,12 +415,12 @@ impl Inference for ColUniqueDraftByGridExclusionInference {
                 if !cells_with_value.is_empty()
                     && cells_with_value
                         .iter()
-                        .all(|&p| p.rc.c == cells_with_value[0].rc.c)
+                        .all(|&p| p.coords.c == cells_with_value[0].coords.c)
                 {
                     let cells_in_same_col_but_not_in_same_grid: Vec<&Cell> = field
-                        .collect_all_drafts_cells_in_c(cells_with_value[0].rc.c)
+                        .collect_all_drafts_cells_in_c(cells_with_value[0].coords.c)
                         .into_iter()
-                        .filter(|&p| p.gn.g != cells_with_value[0].gn.g && p.candidates.contains(v))
+                        .filter(|&p| p.coords.g != cells_with_value[0].coords.g && p.candidates.contains(v))
                         .collect();
 
                     if !cells_in_same_col_but_not_in_same_grid.is_empty() {
@@ -495,13 +495,13 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                 vr.iter()
                     .filter(|&p| p.candidates.contains(v))
                     .find(|&p| {
-                        let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
+                        let vg = field.collect_all_drafts_cells_in_g(p.coords.g);
                         // 条件1：该行内的值都在同一个宫内
-                        let all_in_same_grid = vr.iter().all(|&p_iter| p_iter.gn.g == p.gn.g);
+                        let all_in_same_grid = vr.iter().all(|&p_iter| p_iter.coords.g == p.coords.g);
                         // 条件2：第一个值所在的宫，在其他行内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.contains(v));
+                            .any(|&p_iter| p_iter.coords.r != p.coords.r && p_iter.candidates.contains(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
@@ -515,9 +515,9 @@ impl Inference for GridUniqueDraftByRowExclusionInference {
                             .collect::<Vec<TheCoordsAndTheValue>>();
 
                         let conclusion = field
-                            .collect_all_drafts_cells_in_g(p.gn.g)
+                            .collect_all_drafts_cells_in_g(p.coords.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.r != p.rc.r && p_iter.candidates.contains(v))
+                            .filter(|p_iter| p_iter.coords.r != p.coords.r && p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -574,13 +574,13 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                 vc.iter()
                     .filter(|&p| p.candidates.contains(v))
                     .find(|&p| {
-                        let vg = field.collect_all_drafts_cells_in_g(p.gn.g);
+                        let vg = field.collect_all_drafts_cells_in_g(p.coords.g);
                         // 条件1：该行内的值都在同一个宫内
-                        let all_in_same_grid = vc.iter().all(|&p_iter| p_iter.gn.g == p.gn.g);
+                        let all_in_same_grid = vc.iter().all(|&p_iter| p_iter.coords.g == p.coords.g);
                         // 条件2：第一个值所在的宫，在其他列内有值
                         let others_in_same_grid = vg
                             .iter()
-                            .any(|&p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.contains(v));
+                            .any(|&p_iter| p_iter.coords.c != p.coords.c && p_iter.candidates.contains(v));
                         all_in_same_grid && others_in_same_grid
                     })
                     .map(|p| {
@@ -594,9 +594,9 @@ impl Inference for GridUniqueDraftByColExclusionInference {
                             .collect::<Vec<TheCoordsAndTheValue>>();
 
                         let conclusion = field
-                            .collect_all_drafts_cells_in_g(p.gn.g)
+                            .collect_all_drafts_cells_in_g(p.coords.g)
                             .into_iter()
-                            .filter(|p_iter| p_iter.rc.c != p.rc.c && p_iter.candidates.contains(v))
+                            .filter(|p_iter| p_iter.coords.c != p.coords.c && p_iter.candidates.contains(v))
                             .map(|p_iter| TheCoordsAndTheValue {
                                 the_coords: p_iter.coords,
                                 the_value: vec![v],
@@ -1359,8 +1359,8 @@ impl Inference for NStepFishInference {
                     ));
                     if p.status == CellStatus::DRAFT && p.candidates.contains(v) {
                         all_v_in_one_index.push(match &direction {
-                            IterDirection::Row => (p.rc.r, p.rc.c),
-                            IterDirection::Column => (p.rc.c, p.rc.r),
+                            IterDirection::Row => (p.coords.r, p.coords.c),
+                            IterDirection::Column => (p.coords.c, p.coords.r),
                             IterDirection::Grid => todo!(),
                         });
                     }

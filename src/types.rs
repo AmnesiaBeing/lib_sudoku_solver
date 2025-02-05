@@ -1,4 +1,7 @@
-use std::{ops::DerefMut, ptr::{addr_of, addr_of_mut}};
+use std::{
+    ops::DerefMut,
+    ptr::{addr_of, addr_of_mut},
+};
 
 use rand::{seq::SliceRandom, Rng};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -168,6 +171,7 @@ pub struct Cell {
     pub status: CellStatus,
     pub candidates: Candidate,
     pub value: Option<u8>, // None 0-9
+    // pub answer: u8, // The Answer Of This Cell
 }
 
 impl std::fmt::Debug for Candidate {
@@ -315,6 +319,14 @@ impl Sudoku {
 
     // 仅在初始化时使用，补充所有可能的草稿数
     fn fill_drafts(&mut self) {
+        for r in 0..9 {
+            for c in 0..9 {
+                let cell = self.get_cell_mut_by_rc(RCCoords { r, c });
+                if cell.status == CellStatus::DRAFT {
+                    cell.candidates = Candidate::FULL;
+                }
+            }
+        }
         for r in 0..9 {
             for c in 0..9 {
                 let rc = RCCoords { r, c };
@@ -709,7 +721,7 @@ impl Sudoku {
                 for c in 0..9 {
                     let index = r * 9 + c;
                     let rc = RCCoords { r, c };
-                    let value: Option<u8> = Some(((r * 3 + r / 3 + c) % 9 + 1) as u8);
+                    let value: Option<u8> = Some(((r * 3 + r / 3 + c) % 9) as u8);
                     cells[index].coords = rc.into();
                     if (r * 3) % 9 + r / 3 == c {
                         cells[index].candidates.add(value.unwrap());
@@ -725,224 +737,266 @@ impl Sudoku {
             Sudoku { cells }
         }
 
-        unsafe fn dig_holes(sudoku: &mut Sudoku, max_digs: usize) {
-            // sudoku.deref_mut()
-            let mut candidate_cells: Vec<&mut Cell> = (*(sudoku.deref_mut()))
-                .cells
-                .iter_mut()
-                .filter(|c| c.status == CellStatus::FIXED)
-                .collect();
+        fn dig_holes(sudoku: *mut Sudoku, max_digs: usize) {
+            unsafe {
+                let mut candidate_cells: Vec<*mut Cell> = (*sudoku)
+                    .cells
+                    .iter_mut()
+                    .filter(|c| c.status == CellStatus::FIXED)
+                    .map(|p| p as *mut Cell)
+                    .collect();
 
-            candidate_cells.shuffle(&mut rand::thread_rng());
+                candidate_cells.shuffle(&mut rand::thread_rng());
 
-            for cell in candidate_cells.into_iter().take(max_digs) {
-                let original = (*cell).value.take().unwrap();
-                (*cell).status = CellStatus::DRAFT;
+                for cell in candidate_cells.into_iter().take(max_digs) {
+                    let original = (*cell).value.take().unwrap();
+                    (*cell).status = CellStatus::DRAFT;
 
-                // 更新相关候选数
-                update_peers_candidates(sudoku, (*cell).coords, original);
+                    // 更新相关候选数
+                    update_peers_candidates(sudoku, cell, original);
+                    
+                    // 假设格子的位置是r,c，那么这个格子的答案一定是(r * 3 + r / 3 + c) % 9)
+                    // 这里要想办法最快的推出矛盾来，假设挖空了这个格子，一定不能填其他数字
+                }
             }
         }
 
-        fn update_peers_candidates(sudoku: &mut Sudoku, mid_cell_coords: Coords, value: u8) {
+        unsafe fn update_peers_candidates(sudoku: *mut Sudoku, mid_cell: *const Cell, value: u8) {
             for i in 0..9 {
                 // 更新行候选
-                maybe_add_candidate(sudoku, mid_cell_coords.r, i, value);
+                maybe_add_candidate(
+                    sudoku,
+                    (*sudoku).get_cell_mut_ptr_by_rc(RCCoords {
+                        r: (*mid_cell).coords.r,
+                        c: i,
+                    }),
+                    value,
+                );
                 // 更新列候选
-                maybe_add_candidate(sudoku, i, mid_cell_coords.c, value);
-            }
-            let (gltr, gltc) = (mid_cell_coords.g / 3, mid_cell_coords.g % 3);
-            for i in 0..2 {
-                for j in 0..2 {
-                    // 更新宫候选
-                    maybe_add_candidate(sudoku, gltr + i, gltc + j, value);
-                }
+                maybe_add_candidate(
+                    sudoku,
+                    (*sudoku).get_cell_mut_ptr_by_rc(RCCoords {
+                        r: i,
+                        c: (*mid_cell).coords.c,
+                    }),
+                    value,
+                );
+                // 更新宫候选
+                maybe_add_candidate(
+                    sudoku,
+                    (*sudoku).get_cell_mut_ptr_by_gn(GNCoords {
+                        g: (*mid_cell).coords.g,
+                        n: i,
+                    }),
+                    value,
+                );
             }
         }
 
         unsafe fn maybe_add_candidate(sudoku: *mut Sudoku, cell: *mut Cell, value: u8) {
-            if (*cell).status == CellStatus::DRAFT && conflict_exists(sudoku, (*cell).coords, value)
-            {
+            if (*cell).status == CellStatus::DRAFT && conflict_exists(sudoku, cell, value) {
                 (*cell).candidates.add(value);
             }
         }
 
-        unsafe fn conflict_exists(sudoku: *mut Sudoku, coords: Coords, value: u8) -> bool {
-            let mut ret = false;
+        unsafe fn conflict_exists(sudoku: *mut Sudoku, cell: *const Cell, value: u8) -> bool {
             for i in 0..9 {
-                // 更新行候选
-                maybe_add_candidate(sudoku, mid_cell_coords.r, i, value);
-                // 更新列候选
-                maybe_add_candidate(sudoku, i, mid_cell_coords.c, value);
+                let Cell {
+                    status: cell_status,
+                    value: cell_value,
+                    ..
+                } = (*sudoku).get_cell_ref_by_rc(RCCoords {
+                    r: (*cell).coords.r,
+                    c: i,
+                });
+                if *cell_status == CellStatus::FIXED && *cell_value == Some(value) {
+                    return true;
+                };
+                let Cell {
+                    status: cell_status,
+                    value: cell_value,
+                    ..
+                } = (*sudoku).get_cell_ref_by_rc(RCCoords {
+                    r: i,
+                    c: (*cell).coords.c,
+                });
+                if *cell_status == CellStatus::FIXED && *cell_value == Some(value) {
+                    return true;
+                };
+                let Cell {
+                    status: cell_status,
+                    value: cell_value,
+                    ..
+                } = (*sudoku).get_cell_ref_by_gn(GNCoords {
+                    g: (*cell).coords.g,
+                    n: i,
+                });
+                if *cell_status == CellStatus::FIXED && *cell_value == Some(value) {
+                    return true;
+                };
             }
-            let (gltr, gltc) = (mid_cell_coords.g / 3, mid_cell_coords.g % 3);
-            for i in 0..2 {
-                for j in 0..2 {
-                    // 更新宫候选
-                    maybe_add_candidate(sudoku, gltr + i, gltc + j, value);
-                }
-            }
-            ret
+            false
         }
 
-        let sudoku = create_base();
+        let mut sudoku = create_base();
+        dig_holes(addr_of_mut!(sudoku), difficulty.empty_cells().1);
 
-        let mut field = unsafe {
-            need_try_dig_cells.shuffle(&mut rand::thread_rng());
+        // let mut field = unsafe {
+        //     need_try_dig_cells.shuffle(&mut rand::thread_rng());
 
-            for p in need_try_dig_cells.into_iter().take(max_digs) {
-                let original_value = (*p).value.unwrap();
-                (*p).status = CellStatus::DRAFT;
-                (*p).value = None;
+        //     for p in need_try_dig_cells.into_iter().take(max_digs) {
+        //         let original_value = (*p).value.unwrap();
+        //         (*p).status = CellStatus::DRAFT;
+        //         (*p).value = None;
 
-                // 对于p所在的行中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
-                for c in 0..9 {
-                    let p1 = p_cell.offset(((*p).rc.r * 9 + c) as isize);
-                    if (*p1).status == CellStatus::DRAFT {
-                        let mut flag = true;
-                        for r in 0..9 {
-                            if r != (*p).rc.r {
-                                let p2 = p_cell.offset((r * 9 + c) as isize);
-                                if (*p2).status == CellStatus::FIXED
-                                    && (*p2).value == Some(original_value)
-                                {
-                                    flag = false;
-                                }
-                            }
-                        }
-                        for n in 0..9 {
-                            if n != (*p).gn.n {
-                                let g = (*p1).gn.g;
-                                let p3 = p_cell.offset(
-                                    ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
-                                );
-                                if (*p3).status == CellStatus::FIXED
-                                    && (*p3).value == Some(original_value)
-                                {
-                                    flag = false;
-                                }
-                            }
-                        }
-                        if flag {
-                            (*p1).candidates.add(original_value);
-                        }
-                    }
-                }
+        //         // 对于p所在的行中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+        //         for c in 0..9 {
+        //             let p1 = p_cell.offset(((*p).rc.r * 9 + c) as isize);
+        //             if (*p1).status == CellStatus::DRAFT {
+        //                 let mut flag = true;
+        //                 for r in 0..9 {
+        //                     if r != (*p).rc.r {
+        //                         let p2 = p_cell.offset((r * 9 + c) as isize);
+        //                         if (*p2).status == CellStatus::FIXED
+        //                             && (*p2).value == Some(original_value)
+        //                         {
+        //                             flag = false;
+        //                         }
+        //                     }
+        //                 }
+        //                 for n in 0..9 {
+        //                     if n != (*p).gn.n {
+        //                         let g = (*p1).gn.g;
+        //                         let p3 = p_cell.offset(
+        //                             ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
+        //                         );
+        //                         if (*p3).status == CellStatus::FIXED
+        //                             && (*p3).value == Some(original_value)
+        //                         {
+        //                             flag = false;
+        //                         }
+        //                     }
+        //                 }
+        //                 if flag {
+        //                     (*p1).candidates.add(original_value);
+        //                 }
+        //             }
+        //         }
 
-                // 对于p所在的列中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
-                for r in 0..9 {
-                    let p1 = p_cell.offset((r * 9 + (*p).rc.c) as isize);
-                    if (*p1).status == CellStatus::DRAFT {
-                        let mut flag = true;
-                        for c in 0..9 {
-                            if c != (*p).rc.c {
-                                let p2 = p_cell.offset((r * 9 + c) as isize);
-                                if (*p2).status == CellStatus::FIXED
-                                    && (*p2).value == Some(original_value)
-                                {
-                                    flag = false;
-                                }
-                            }
-                        }
-                        for n in 0..9 {
-                            if n != (*p).gn.n {
-                                let g = (*p1).gn.g;
-                                let p3 = p_cell.offset(
-                                    ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
-                                );
-                                if (*p3).status == CellStatus::FIXED
-                                    && (*p3).value == Some(original_value)
-                                {
-                                    flag = false;
-                                }
-                            }
-                        }
-                        if flag {
-                            (*p1).candidates.add(original_value);
-                        }
-                    }
-                }
+        //         // 对于p所在的列中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+        //         for r in 0..9 {
+        //             let p1 = p_cell.offset((r * 9 + (*p).rc.c) as isize);
+        //             if (*p1).status == CellStatus::DRAFT {
+        //                 let mut flag = true;
+        //                 for c in 0..9 {
+        //                     if c != (*p).rc.c {
+        //                         let p2 = p_cell.offset((r * 9 + c) as isize);
+        //                         if (*p2).status == CellStatus::FIXED
+        //                             && (*p2).value == Some(original_value)
+        //                         {
+        //                             flag = false;
+        //                         }
+        //                     }
+        //                 }
+        //                 for n in 0..9 {
+        //                     if n != (*p).gn.n {
+        //                         let g = (*p1).gn.g;
+        //                         let p3 = p_cell.offset(
+        //                             ((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize,
+        //                         );
+        //                         if (*p3).status == CellStatus::FIXED
+        //                             && (*p3).value == Some(original_value)
+        //                         {
+        //                             flag = false;
+        //                         }
+        //                     }
+        //                 }
+        //                 if flag {
+        //                     (*p1).candidates.add(original_value);
+        //                 }
+        //             }
+        //         }
 
-                // 对于p所在的宫中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
-                for n in 0..9 {
-                    let g = (*p).gn.g;
-                    let p1 =
-                        p_cell.offset(((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize);
-                    if (*p1).status == CellStatus::DRAFT && (*p).gn.n != (*p1).gn.n {
-                        let mut flag = true;
-                        for c in 0..9 {
-                            let r = (*p1).rc.r;
-                            let p2 = p_cell.offset((r * 9 + c) as isize);
-                            if (*p2).status == CellStatus::FIXED
-                                && (*p2).value == Some(original_value)
-                            {
-                                flag = false;
-                            }
-                        }
-                        for r in 0..9 {
-                            let c = (*p1).rc.c;
-                            let p2 = p_cell.offset((r * 9 + c) as isize);
-                            if (*p2).status == CellStatus::FIXED
-                                && (*p2).value == Some(original_value)
-                            {
-                                flag = false;
-                            }
-                        }
-                        if flag {
-                            (*p1).candidates.add(original_value);
-                        }
-                    }
-                }
-            }
+        //         // 对于p所在的宫中的每个格子，假设p被挖走了，这些格子的候选数是否可以增加p的值
+        //         for n in 0..9 {
+        //             let g = (*p).gn.g;
+        //             let p1 =
+        //                 p_cell.offset(((g / 3 * 3 + n / 3) * 9 + (g % 3 * 3 + n % 3)) as isize);
+        //             if (*p1).status == CellStatus::DRAFT && (*p).gn.n != (*p1).gn.n {
+        //                 let mut flag = true;
+        //                 for c in 0..9 {
+        //                     let r = (*p1).rc.r;
+        //                     let p2 = p_cell.offset((r * 9 + c) as isize);
+        //                     if (*p2).status == CellStatus::FIXED
+        //                         && (*p2).value == Some(original_value)
+        //                     {
+        //                         flag = false;
+        //                     }
+        //                 }
+        //                 for r in 0..9 {
+        //                     let c = (*p1).rc.c;
+        //                     let p2 = p_cell.offset((r * 9 + c) as isize);
+        //                     if (*p2).status == CellStatus::FIXED
+        //                         && (*p2).value == Some(original_value)
+        //                     {
+        //                         flag = false;
+        //                     }
+        //                 }
+        //                 if flag {
+        //                     (*p1).candidates.add(original_value);
+        //                 }
+        //             }
+        //         }
+        //     }
 
-            // let mut rng = rand::thread_rng();
+        // let mut rng = rand::thread_rng();
 
-            // // 行交换
-            // for _ in 0..3 {
-            //     let block = rng.gen_range(0..3);
-            //     let mut rows: Vec<usize> = (block * 3..(block + 1) * 3).collect();
-            //     rows.shuffle(&mut rng);
-            //     if let [r1, r2] = rows[..2] {
-            //         puzzle.swap(r1, r2);
-            //         solution.swap(r1, r2);
-            //     }
-            // }
+        // // 行交换
+        // for _ in 0..3 {
+        //     let block = rng.gen_range(0..3);
+        //     let mut rows: Vec<usize> = (block * 3..(block + 1) * 3).collect();
+        //     rows.shuffle(&mut rng);
+        //     if let [r1, r2] = rows[..2] {
+        //         puzzle.swap(r1, r2);
+        //         solution.swap(r1, r2);
+        //     }
+        // }
 
-            // // 列交换
-            // for _ in 0..3 {
-            //     let block = rng.gen_range(0..3);
-            //     let mut cols: Vec<usize> = (block * 3..(block + 1) * 3).collect();
-            //     cols.shuffle(&mut rng);
-            //     if let [c1, c2] = cols[..2] {
-            //         for row in puzzle.iter_mut() {
-            //             row.swap(c1, c2);
-            //         }
-            //         for row in solution.iter_mut() {
-            //             row.swap(c1, c2);
-            //         }
-            //     }
-            // }
+        // // 列交换
+        // for _ in 0..3 {
+        //     let block = rng.gen_range(0..3);
+        //     let mut cols: Vec<usize> = (block * 3..(block + 1) * 3).collect();
+        //     cols.shuffle(&mut rng);
+        //     if let [c1, c2] = cols[..2] {
+        //         for row in puzzle.iter_mut() {
+        //             row.swap(c1, c2);
+        //         }
+        //         for row in solution.iter_mut() {
+        //             row.swap(c1, c2);
+        //         }
+        //     }
+        // }
 
-            // // 数字替换
-            // let mut numbers: Vec<u8> = (1..=9).collect();
-            // numbers.shuffle(&mut rng);
-            // let replace_map: Vec<u8> = (1..=9).map(|i| numbers[i as usize - 1]).collect();
+        // // 数字替换
+        // let mut numbers: Vec<u8> = (1..=9).collect();
+        // numbers.shuffle(&mut rng);
+        // let replace_map: Vec<u8> = (1..=9).map(|i| numbers[i as usize - 1]).collect();
 
-            // for i in 0..9 {
-            //     for j in 0..9 {
-            //         solution[i][j] = replace_map[solution[i][j] as usize - 1];
-            //         if puzzle[i][j] != 0 {
-            //             puzzle[i][j] = replace_map[puzzle[i][j] as usize - 1];
-            //         }
-            //     }
-            // }
+        // for i in 0..9 {
+        //     for j in 0..9 {
+        //         solution[i][j] = replace_map[solution[i][j] as usize - 1];
+        //         if puzzle[i][j] != 0 {
+        //             puzzle[i][j] = replace_map[puzzle[i][j] as usize - 1];
+        //         }
+        //     }
+        // }
 
-            field.assume_init()
-        };
+        //     field.assume_init()
+        // };
 
-        field.fill_drafts();
+        sudoku.fill_drafts();
 
-        field
+        sudoku
 
         // let mut sudoku = Sudoku::create_base();
 
